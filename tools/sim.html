@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>STRATES — banc d'essai</title>
+<style>
+  body { background:#14110e; color:#e6ddd0; font:13px/1.45 ui-monospace,Consolas,monospace; padding:14px; }
+  h1 { color:#e0a33e; font-size:15px; letter-spacing:3px; margin:0 0 10px; }
+  pre { margin:0; white-space:pre-wrap; }
+  .ok { color:#7fae6a; } .ko { color:#c05a4c; } .hl { color:#e0a33e; }
+</style>
+</head>
+<body>
+<h1>STRATES — BANC D'ESSAI DU MOTEUR</h1>
+<pre id="out">exécution…</pre>
+
+<!-- Coquilles vides : le banc d'essai n'a ni interface ni sauvegarde. -->
+<script>
+  const UI = new Proxy({}, { get: () => undefined, set: () => true });
+  function toast() {}
+</script>
+
+<script src="../js/utils.js"></script>
+<script src="../js/content.js"></script>
+<script src="../js/state.js"></script>
+<script src="../js/engine.js"></script>
+
+<script>
+/* =========================================================================
+   Joueur automatique : heuristique simple et honnête.
+   À chaque décision : recherches d'abord (cumulatives), puis améliorations
+   rentables, puis le meilleur outil au ratio (σ/s gagné) / (coût), en
+   gardant toujours de quoi payer le mètre suivant.
+   ========================================================================= */
+const L = [];
+const say = (s) => L.push(s);
+
+function autoplay(seconds, marks) {
+  const dt = 0.5;
+  const hit = {};
+  let t = 0, step = 0;
+
+  while (t < seconds) {
+    Engine.tick(dt);
+    t += dt;
+
+    /* Le joueur clique à la bêche : beaucoup au début (c'est la seule source
+       de sédiment tant qu'on n'a aucun outil), puis de moins en moins.
+       Sans ce comportement, la simulation reste bloquée à 0 σ pour toujours. */
+    const cps = t < 180 ? 4 : t < 900 ? 1 : 0;
+    for (let i = 0; i < cps * dt; i++) Engine.click();
+
+    if (++step % 4 === 0) {
+      for (const r of RESEARCH) Engine.buyResearch(r.id);
+
+      for (const u of UPGRADES.concat(GLOBAL_UPGRADES)) {
+        const visible = u.tool ? (S.tools[u.tool] || 0) >= u.need : S.bestDepth >= u.needDepth;
+        if (visible && !S.upgrades[u.id] && S.sediment > u.cost * 1.6) Engine.buyUpgrade(u.id);
+      }
+
+      /* Outils : on achète en boucle le meilleur ratio (σ/s gagné)/(coût)
+         tant que c'est abordable. L'ACHAT PASSE AVANT LA DESCENTE — sinon
+         le joueur dépense tout dans le puits et ne produit jamais rien. */
+      let guardBuy = 40;
+      while (guardBuy-- > 0) {
+        let best = null, bestRatio = 0;
+        for (const tool of TOOLS) {
+          if (!Engine.toolUnlocked(tool)) continue;
+          const cost = Engine.toolCost(tool.id);
+          if (cost > S.sediment) continue;
+          const ratio = (tool.prod * S.calc.toolMult[tool.id]) / cost;
+          if (ratio > bestRatio) { bestRatio = ratio; best = tool; }
+        }
+        if (!best) break;
+        S.buyMode = 1;
+        Engine.buyTool(best.id);
+      }
+
+      /* Descente : uniquement avec du surplus (3× le coût du mètre), pour
+         garder de quoi continuer à investir. C'est l'arbitrage central du
+         jeu — descendre ouvre du contenu, investir accélère tout. */
+      if (!S.calc.autoDig) {
+        let g = 500;
+        while (g-- > 0 && S.sediment > Engine.digCost(S.depth) * 3 && Engine.descend(true)) {}
+      }
+    }
+
+    for (const m of marks) if (!hit[m] && S.maxDepth >= m) hit[m] = t;
+  }
+  return hit;
+}
+
+const sci = (n) => !isFinite(n) ? '∞' : n < 1000 ? n.toFixed(2) : n.toExponential(2);
+const fmtT = (s) => s == null ? '  — jamais' :
+  s < 60 ? Math.round(s) + ' s' :
+  s < 3600 ? Math.floor(s / 60) + ' min ' + Math.round(s % 60) + ' s' :
+  (s / 3600).toFixed(2) + ' h';
+
+/* ------------------------------------------------------------------ */
+try {
+  const MARKS = [10, 25, 50, 75, 100, 130, 170, 200, 230, 260, 300, 380, 470];
+  const HOURS = 8;
+
+  S = newGame();
+  Engine.computeStats();
+  const t0 = performance.now();
+  const hit = autoplay(HOURS * 3600, MARKS);
+  const ms = performance.now() - t0;
+
+  say(`Simulation : ${HOURS} h de jeu actif, calculées en ${ms.toFixed(0)} ms.\n`);
+  say('JALONS DE PROFONDEUR');
+  for (const m of MARKS) say(`   ${String(m).padStart(4)} m   ${fmtT(hit[m])}`);
+
+  say('\nÉTAT FINAL');
+  say(`   profondeur       ${Math.floor(S.depth)} m   (record ${Math.floor(S.bestDepth)} m)`);
+  say(`   production       ${sci(S.calc.sedPerSec)} σ/s`);
+  say(`   multiplicateur   ×${sci(S.calc.prodMult)}`);
+  say(`   coût du mètre    ${sci(Engine.digCost(S.depth))} σ`);
+  say(`   savoir           ${sci(S.knowledge)} ✦`);
+  say(`   recherches       ${Object.keys(S.research).length} / ${RESEARCH.length}`);
+  say(`   artefacts        ${Object.keys(S.artefacts).length} / ${ARTEFACTS.length} types`);
+  say(`   améliorations    ${Object.keys(S.upgrades).length} / ${UPGRADES.length + GLOBAL_UPGRADES.length}`);
+  say(`   succès           ${Object.keys(S.achievements).length} / ${ACHIEVEMENTS.length}`);
+  say(`   outils           ${TOOLS.map((t) => (S.tools[t.id] || 0)).join(' · ')}`);
+  say(`   prestige ouvert  ${S.calc.prestigeUnlocked ? 'OUI' : 'NON'}`);
+  say(`   éclats si reset  ${Engine.shardsFor(S.maxDepth)}`);
+
+  say('\nCOURBE DU PUITS (coût brut, hors réductions)');
+  for (const d of [0, 15, 40, 75, 120, 170, 230, 300, 380, 470]) {
+    const st = Engine.strataAt(d);
+    say(`   ${String(d).padStart(4)} m  ${st.name.padEnd(23)} ${sci(BAL.digBase * Math.pow(1 + BAL.digGrowth, d) * st.hardness).padStart(10)} σ`);
+  }
+
+  /* ---- Deuxième vie : après un comblement, à quelle vitesse rattrape-t-on ? ---- */
+  say('\nAPRÈS COMBLEMENT (mêmes 8 h, avec les éclats gagnés)');
+  const gained = Engine.doPrestige();
+  const hit2 = autoplay(HOURS * 3600, MARKS);
+  say(`   éclats encaissés ${gained}  →  bonus permanent +${Math.round(BAL.shardBonus * S.shardsTotal * 100)} %`);
+  for (const m of MARKS) say(`   ${String(m).padStart(4)} m   ${fmtT(hit2[m])}`);
+  say(`   profondeur       ${Math.floor(S.depth)} m`);
+
+  /* ---- Contrôles de cohérence ---- */
+  say('\nCONTRÔLES');
+  const checks = [
+    ['formatage 0',        fmt(0) === '0'],
+    ['formatage 1234',     fmt(1234).includes('K')],
+    ['formatage 1e30',     fmt(1e30).includes('e')],
+    ['pas de NaN sédiment', isFinite(S.sediment) && !isNaN(S.sediment)],
+    ['pas de NaN prod',     isFinite(S.calc.sedPerSec)],
+    ['coût mètre croissant', Engine.digCost(50) > Engine.digCost(10)],
+    ['strates ordonnées',   STRATA.every((s, i) => i === 0 || s.depth > STRATA[i - 1].depth)],
+    ['ids artefacts uniques', new Set(ARTEFACTS.map(a => a.id)).size === ARTEFACTS.length],
+    ['ids outils uniques',    new Set(TOOLS.map(t => t.id)).size === TOOLS.length],
+    ['prérequis recherche valides', RESEARCH.every(r => r.req.every(q => BY_ID.research[q]))],
+    ['prérequis méta valides',      META.every(m => m.req.every(q => BY_ID.meta[q]))],
+    ['chaque strate a des artefacts', STRATA.every(s => (ARTEFACTS_BY_STRATA[s.id] || []).length >= 3)],
+    ['achat groupé cohérent', (() => { S.buyMode = 10; const a = Engine.toolCostBulk('pelle', 10); const b = Engine.toolCost('pelle', 0) + Engine.toolCost('pelle', 1); return a > b; })()],
+    ['export/import',         (() => { const c = exportSave(); return typeof c === 'string' && c.length > 20; })()],
+  ];
+  let bad = 0;
+  for (const [name, ok] of checks) { if (!ok) bad++; say(`   ${ok ? '[OK]' : '[KO]'} ${name}`); }
+  say(bad ? `\n>>> ${bad} CONTRÔLE(S) EN ÉCHEC` : '\n>>> TOUS LES CONTRÔLES PASSENT');
+
+  document.getElementById('out').textContent = L.join('\n');
+} catch (e) {
+  document.getElementById('out').innerHTML =
+    '<span class="ko">ERREUR : ' + e.message + '</span>\n\n' + (e.stack || '') + '\n\n' + L.join('\n');
+}
+</script>
+</body>
+</html>

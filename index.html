@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STRATES</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
+</head>
+<body>
+
+<!-- ======================= BANDEAU ======================= -->
+<header id="topbar">
+  <div class="brand">STRATES<span class="brand-sub">journal de fouille</span></div>
+
+  <div class="resources">
+    <div class="res">
+      <div class="res-val" id="res-sediment">0</div>
+      <div class="res-lab">sédiment σ</div>
+      <div class="res-rate" id="res-rate">0 σ/s</div>
+    </div>
+    <div class="res">
+      <div class="res-val" id="res-knowledge">0</div>
+      <div class="res-lab">savoir ✦</div>
+    </div>
+    <div class="res">
+      <div class="res-val" id="res-depth">0 m</div>
+      <div class="res-lab">profondeur</div>
+    </div>
+    <div class="res hidden" id="res-shard-box">
+      <div class="res-val" id="res-shards">0</div>
+      <div class="res-lab">éclats ◈</div>
+    </div>
+  </div>
+
+  <button id="btn-menu" class="ghost" title="Options">☰</button>
+</header>
+
+<!-- ======================= CORPS ======================= -->
+<main>
+
+  <!-- ---------- COLONNE GAUCHE : LE PUITS ---------- -->
+  <aside id="well">
+    <div id="well-col"></div>
+
+    <div id="well-ctl">
+      <div class="dig-head">
+        <span id="dig-strata">Terre végétale</span>
+        <span id="dig-eta">—</span>
+      </div>
+      <div class="dig-bar"><div id="dig-fill"></div></div>
+      <div class="dig-sub">prochain mètre : <b id="dig-cost">15 σ</b></div>
+
+      <button id="btn-descend" class="big">Descendre d'un mètre</button>
+      <button id="btn-dig" class="big alt">⛏ Creuser à la bêche</button>
+
+      <!-- Apparaît avec la recherche « Descente assistée ». -->
+      <div id="auto-ctl" class="hidden">
+        <span>Descente auto</span>
+        <div class="auto-row">
+          <button class="automode" data-m="off"  title="Tout le sédiment reste disponible pour les achats.">arrêt</button>
+          <button class="automode on" data-m="safe" title="Ne descend qu'avec 20× le prix du mètre d'avance.">prudent</button>
+          <button class="automode" data-m="max"  title="Descend dès que possible. Plus rien à dépenser.">à fond</button>
+        </div>
+      </div>
+
+      <div class="hint">Espace = bêche · D = descendre · S = sauvegarder</div>
+    </div>
+  </aside>
+
+  <!-- ---------- COLONNE CENTRALE : PANNEAUX ---------- -->
+  <section id="panel">
+    <nav id="tabs">
+      <button class="tab on" data-tab="outils">Outils</button>
+      <button class="tab" data-tab="ameliorations">Améliorations <span id="badge-upgrades" class="badge hidden"></span></button>
+      <button class="tab" data-tab="recherche">Recherche <span id="badge-research" class="badge hidden"></span></button>
+      <button class="tab" data-tab="collection">Collection</button>
+      <button class="tab" data-tab="memoire">Mémoire</button>
+      <button class="tab" data-tab="stats">Journal de bord</button>
+    </nav>
+
+    <!-- OUTILS -->
+    <div class="tabpane" id="pane-outils">
+      <div class="pane-head">
+        <p>Les outils produisent du <b>sédiment</b> en continu. Le sédiment paie la descente.</p>
+        <div class="buymodes">
+          <span>Acheter</span>
+          <button class="buymode on" data-n="1">×1</button>
+          <button class="buymode" data-n="10">×10</button>
+          <button class="buymode" data-n="100">×100</button>
+          <button class="buymode" data-n="-1">max</button>
+        </div>
+      </div>
+      <div id="list-tools" class="list"></div>
+    </div>
+
+    <!-- AMÉLIORATIONS -->
+    <div class="tabpane hidden" id="pane-ameliorations">
+      <div class="pane-head"><p>Achats uniques, payés en sédiment. Elles doublent un outil ou boostent tout le chantier.</p></div>
+      <div id="list-upgrades" class="list"></div>
+    </div>
+
+    <!-- RECHERCHE -->
+    <div class="tabpane hidden" id="pane-recherche">
+      <div class="pane-head"><p>Payées en <b>savoir ✦</b>, gagné en exhumant des artefacts. <i>Perdues au comblement du puits.</i></p></div>
+      <div id="list-research" class="list"></div>
+    </div>
+
+    <!-- COLLECTION -->
+    <div class="tabpane hidden" id="pane-collection">
+      <div class="pane-head"><p>Ce que le puits vous a rendu. <b id="coll-count">0 / 0</b> — <i>la collection survit à tout.</i></p></div>
+      <div id="list-collection"></div>
+    </div>
+
+    <!-- MÉMOIRE -->
+    <div class="tabpane hidden" id="pane-memoire">
+      <div id="meta-locked" class="pane-head">
+        <p class="empty">Le comblement du puits n'est pas encore possible.<br>
+        Cherchez le <b>Protocole de comblement</b> dans l'onglet Recherche.</p>
+      </div>
+
+      <div id="meta-body" class="hidden">
+        <div class="prestige-box">
+          <div class="pb-grid">
+            <div><span id="meta-gain">0</span><small>éclats si vous comblez</small></div>
+            <div><span id="meta-have">0</span><small>éclats à dépenser</small></div>
+            <div><span id="meta-total">0</span><small>éclats à vie</small></div>
+            <div><span id="meta-bonus">+0 %</span><small>bonus permanent</small></div>
+            <div><span id="meta-count">0</span><small>comblements</small></div>
+          </div>
+          <div class="pb-next" id="meta-next"></div>
+          <button id="btn-prestige" class="big danger">Combler le puits</button>
+        </div>
+        <div id="list-meta" class="list"></div>
+      </div>
+    </div>
+
+    <!-- JOURNAL DE BORD -->
+    <div class="tabpane hidden" id="pane-stats">
+      <div class="pane-head"><p>Chiffres du chantier et faits d'armes. <b id="ach-count">0 / 0</b></p></div>
+      <table id="stat-table"></table>
+      <div id="list-ach" class="ach-grid"></div>
+    </div>
+  </section>
+
+  <!-- ---------- COLONNE DROITE : JOURNAL ---------- -->
+  <aside id="journal">
+    <h3>Carnet de fouille</h3>
+    <div id="log"></div>
+  </aside>
+
+</main>
+
+<!-- ======================= SURCOUCHES ======================= -->
+<div id="artefact-flash" class="hidden"></div>
+<div id="toasts"></div>
+
+<div class="modal hidden" id="modal-options">
+  <div class="modal-box">
+    <h2>Options</h2>
+    <div class="modal-row">
+      <button id="opt-save">Sauvegarder maintenant</button>
+      <button id="opt-export">Exporter (copie le code)</button>
+      <button id="opt-import">Importer le code ci-dessous</button>
+    </div>
+    <textarea id="opt-io" rows="4" placeholder="Code de sauvegarde…"></textarea>
+    <p class="small">La partie est stockée dans votre navigateur et sauvegardée automatiquement
+      toutes les 20 secondes. Vider les données du site efface la partie — pensez à exporter.</p>
+    <div class="modal-row">
+      <button id="opt-wipe" class="danger">Effacer la partie</button>
+      <button data-close>Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal-confirm">
+  <div class="modal-box">
+    <h2 id="confirm-title">…</h2>
+    <p id="confirm-body">…</p>
+    <div class="modal-row">
+      <button id="confirm-yes" class="danger">Confirmer</button>
+      <button id="confirm-no" data-close>Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
+     en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
+<script src="js/utils.js"></script>
+<script src="js/content.js"></script>
+<script src="js/state.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
