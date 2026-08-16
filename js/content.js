@@ -18,6 +18,13 @@
      custom            : effet particulier, codé en dur dans engine.js
    ========================================================================= */
 
+/* Version du jeu. Affichée dans le menu Options : quand quelqu'un d'autre
+   joue et signale un problème, la première question est toujours « quelle
+   version ? ». À incrémenter en même temps que le `?v=` des balises
+   <script>/<link> de index.html, qui force le navigateur à recharger les
+   fichiers au lieu de resservir ceux qu'il a en cache. */
+const VERSION = '1.1.0';
+
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
    Tout ce qui gouverne la courbe de progression est ici, en un seul endroit.
@@ -28,6 +35,8 @@ const BAL = {
   toolRatio: 1.15,      // chaque exemplaire d'un outil coûte +15 % (standard du genre)
   artefactChance: 0.20, // 20 % de chance de trouver un artefact par mètre creusé
   offlineCapH: 8,       // heures de progression hors-ligne maximum
+  eventChance: 0.18,    // 18 % de chance d'événement par mètre creusé…
+  eventCooldown: 150,   // …mais jamais deux à moins de 150 s DE JEU d'intervalle
   shardDiv: 45,         // profondeur/45 avant mise en puissance → nb d'éclats
   shardPow: 1.45,       // exposant : plus on va profond, plus ça paie
   shardBonus: 0.10,     // +10 % de production par éclat gagné à vie
@@ -332,6 +341,211 @@ const META = [
 ];
 
 /* -------------------------------------------------------------------------
+   ÉVÉNEMENTS DE FORAGE — le puits pose une question, le joueur répond.
+
+   POURQUOI ILS EXISTENT : sans eux, le jeu ne demande jamais rien au joueur.
+   Le carnet raconte, les artefacts intriguent, mais tout cela se subit. Et
+   certaines strates sont larges (La Nappe : 45 m, le Socle : 50 m) : on y
+   passe une heure sans qu'il n'arrive rien de neuf. Les événements comblent
+   exactement ces creux et transforment le décor en décisions.
+
+   RÈGLE DE CONCEPTION : aucun choix ne doit être évidemment meilleur. On
+   échange toujours une chose contre une autre — du sédiment contre du temps,
+   de la sécurité contre du savoir, de la prudence contre de la vitesse.
+
+   Vocabulaire des effets (`fx`), appliqué par Engine.resolveEvent() :
+     sedimentFrac  fraction de la réserve actuelle gagnée/perdue (−0.4 = −40 %)
+     sedimentSec   secondes de production gagnées/perdues
+     knowledgeMul  multiples du savoir de la strate courante
+     artefact      true → un artefact de la strate, garanti
+     depth         mètres gagnés (+) ou perdus (−), gratuitement
+     buff          effet temporaire { name, dur (s), prodMult, digCostMult, artefactChanceMult }
+   `risk` (0–1) = probabilité de RÉUSSITE ; en cas d'échec, `fail` s'applique.
+   ------------------------------------------------------------------------- */
+const EVENTS = [
+  /* ---------------------------- génériques ---------------------------- */
+  {
+    id: 'filon', strata: null, minDepth: 6,
+    title: 'Filon de terre meuble',
+    text: "Le trépan s'enfonce d'un coup : une poche de sédiment déjà fragmenté, sur plusieurs mètres.",
+    choices: [
+      { label: "Tout extraire", hint: "On charge et on remonte.",
+        fx: { sedimentSec: 150 } },
+      { label: "Consolider les parois avec", hint: "Le puits se tient mieux un moment.",
+        fx: { buff: { name: 'Parois consolidées', dur: 180, digCostMult: 0.8 } } },
+    ],
+  },
+  {
+    id: 'coince', strata: null, minDepth: 12,
+    title: 'Le trépan est coincé',
+    text: "Quelque chose de dur, en travers. Ce n'est pas de la roche : ça sonne creux.",
+    choices: [
+      { label: "Forcer", hint: "Souvent sans conséquence. Parfois coûteux.",
+        risk: 0.6, fx: {}, fail: { sedimentFrac: -0.3 } },
+      { label: "Démonter et dégager à la main", hint: "Sûr, mais on perd du temps.",
+        fx: { sedimentSec: -100 } },
+    ],
+  },
+  {
+    id: 'pause', strata: null, minDepth: 20,
+    title: "L'équipe demande une pause",
+    text: "Trois jours qu'ils descendent sans remonter. Le chef de poste vous regarde sans rien dire.",
+    choices: [
+      { label: "Accorder la pause", hint: "On perd un peu, puis on produit bien plus.",
+        fx: { sedimentSec: -80, buff: { name: 'Équipe reposée', dur: 300, prodMult: 1.5 } } },
+      { label: "Refuser, on continue", hint: "Rien ne s'arrête. Le moral, si.",
+        fx: { buff: { name: 'Moral entamé', dur: 180, prodMult: 0.85 } } },
+    ],
+  },
+
+  /* ---------------------------- calcaire ---------------------------- */
+  {
+    id: 'banc_fossiles', strata: ['calcaire'], minDepth: 0,
+    title: 'Banc de fossiles',
+    text: "Une couche entière de coquilles empilées, intactes. Un paléontologue pleurerait. Vous avez un puits à creuser.",
+    choices: [
+      { label: "Fouiller méthodiquement", hint: "Le chantier s'arrête pendant ce temps.",
+        fx: { artefact: true, sedimentSec: -120 } },
+      { label: "Traverser", hint: "On broie tout et on avance.",
+        fx: { sedimentSec: 120 } },
+    ],
+  },
+
+  /* ------------------------- La Nappe (75–120) ------------------------- */
+  {
+    id: 'venue_eau', strata: ['nappe'], minDepth: 0,
+    title: "Venue d'eau",
+    text: "Le niveau monte de trente centimètres par minute. Les pompes suivent à peine.",
+    choices: [
+      { label: "Tout pomper immédiatement", hint: "Cher, mais réglé.",
+        fx: { sedimentFrac: -0.45 } },
+      { label: "Laisser monter et forer dedans", hint: "On fore dans l'eau. Ça se paie.",
+        fx: { buff: { name: 'Puits noyé', dur: 240, digCostMult: 1.6 } } },
+    ],
+  },
+  {
+    id: 'poche_air', strata: ['nappe'], minDepth: 0,
+    title: "Poche d'air scellée",
+    text: "De l'air enfermé là depuis douze mille ans vient de se mélanger au vôtre. Il sent la pierre chaude.",
+    choices: [
+      { label: "Prélever et analyser", hint: "Le laboratoire va aimer.",
+        fx: { knowledgeMul: 5 } },
+      { label: "Profiter du vide pour avancer", hint: "On gagne du terrain sans creuser.",
+        fx: { depth: 1 } },
+    ],
+  },
+  {
+    id: 'gout_eau', strata: ['nappe'], minDepth: 0,
+    title: "L'eau est tiède, et sucrée",
+    text: "Trente-huit degrés à quatre-vingt-dix mètres, sans source de chaleur connue. Un ouvrier en a bu avant qu'on l'arrête.",
+    choices: [
+      { label: "L'envoyer au laboratoire", hint: "La voie prudente.",
+        fx: { knowledgeMul: 6 } },
+      { label: "En distribuer à l'équipe", hint: "Personne ne sait ce qu'il y a dedans.",
+        risk: 0.5,
+        fx: { buff: { name: 'Vigueur inexpliquée', dur: 300, prodMult: 2.2 } },
+        fail: { sedimentFrac: -0.3, buff: { name: 'Équipe malade', dur: 240, prodMult: 0.7 } } },
+    ],
+  },
+
+  /* ---------------------- Socle granitique (120–170) ---------------------- */
+  {
+    id: 'trepan_chante', strata: ['granite'], minDepth: 0,
+    title: 'Le trépan chante',
+    text: "Une note tenue, très basse, qui ne vient pas de la machine. La roche répond au forage.",
+    choices: [
+      { label: "Accorder le forage sur la note", hint: "La roche s'ouvre d'elle-même.",
+        fx: { buff: { name: 'Forage accordé', dur: 240, digCostMult: 0.75 } } },
+      { label: "Tout arrêter et enregistrer", hint: "Du savoir. Et un doute.",
+        fx: { knowledgeMul: 4 } },
+    ],
+  },
+  {
+    id: 'carotte_impossible', strata: ['granite'], minDepth: 0,
+    title: 'Carotte impossible',
+    text: "L'échantillon remonte avec une strie régulière tous les onze millimètres. Le granite ne fait pas ça.",
+    choices: [
+      { label: "Envoyer au laboratoire", hint: "Elle finira en vitrine.",
+        fx: { artefact: true } },
+      { label: "La garder et l'étudier seul", hint: "Personne d'autre n'a besoin de savoir.",
+        fx: { knowledgeMul: 8 } },
+    ],
+  },
+  {
+    id: 'fissure', strata: ['granite', 'silence'], minDepth: 0,
+    title: 'Le puits craque',
+    text: "Une fissure court sur toute la paroi nord. Elle s'ouvre lentement, mais elle s'ouvre.",
+    choices: [
+      { label: "Étayer avant tout", hint: "Coûteux, mais le puits tient.",
+        fx: { sedimentFrac: -0.35 } },
+      { label: "Accélérer et passer avant", hint: "On passe en force, et on verra.",
+        risk: 0.55, fx: { depth: 2 }, fail: { depth: -5 } },
+    ],
+  },
+
+  /* ------------------------ La Cité Noyée (170+) ------------------------ */
+  {
+    id: 'une_rue', strata: ['cite'], minDepth: 0,
+    title: 'Une rue',
+    text: "Pavée. Avec des trottoirs, et une rigole centrale pour les eaux. Elle descend, elle aussi.",
+    choices: [
+      { label: "La suivre", hint: "On prend le temps de regarder.",
+        fx: { artefact: true, knowledgeMul: 4 } },
+      { label: "Forer à travers", hint: "On ne s'attarde pas.",
+        fx: { depth: 1, sedimentSec: 90 } },
+    ],
+  },
+  {
+    id: 'une_porte', strata: ['cite'], minDepth: 0,
+    title: 'Une porte',
+    text: "Verrouillée de l'intérieur. Ce qui suppose que quelqu'un est resté du bon côté.",
+    choices: [
+      { label: "L'ouvrir", hint: "Quelqu'un a fermé. On rouvre.",
+        fx: { knowledgeMul: 10 } },
+      { label: "La murer et continuer à descendre", hint: "L'équipe travaille mieux sans y penser.",
+        fx: { buff: { name: 'On ne regarde pas derrière', dur: 240, prodMult: 1.8 } } },
+    ],
+  },
+
+  /* ----------------------- Le Grand Silence (230+) ----------------------- */
+  {
+    id: 'echo_tot', strata: ['silence'], minDepth: 0,
+    title: "L'écho revient trop tôt",
+    text: "Le sondage sismique renvoie un signal avant même que l'onde ait pu atteindre la paroi.",
+    choices: [
+      { label: "Réduire la puissance", hint: "On avance sans réveiller quoi que ce soit.",
+        fx: { buff: { name: 'Forage feutré', dur: 300, digCostMult: 0.7 } } },
+      { label: "Frapper plus fort pour voir", hint: "Pour savoir. Ou pour le regretter.",
+        risk: 0.5, fx: { knowledgeMul: 12 }, fail: { depth: -5, sedimentFrac: -0.5 } },
+    ],
+  },
+
+  /* -------------------- Machinerie / Réseau (300+) -------------------- */
+  {
+    id: 'engrenage_arret', strata: ['machine'], minDepth: 0,
+    title: "Un engrenage s'arrête",
+    text: "Il tournait depuis quatre milliards d'années. Le trépan l'a effleuré. Il s'est arrêté. Il attend.",
+    choices: [
+      { label: "Reculer et observer", hint: "On note tout, à distance.",
+        fx: { knowledgeMul: 6 } },
+      { label: "Le remettre en mouvement", hint: "La machine se remet à travailler. Pour vous.",
+        fx: { buff: { name: 'La machine aide', dur: 300, prodMult: 2.5 } } },
+    ],
+  },
+  {
+    id: 'reseau_propose', strata: ['reseau', 'coeur'], minDepth: 0,
+    title: 'Le Réseau propose',
+    text: "Les filaments se sont réorganisés devant le trépan. Ils forment une phrase, dans votre langue. C'est une offre.",
+    choices: [
+      { label: "Accepter", hint: "On ne relit pas les termes.",
+        fx: { buff: { name: 'Accord tacite', dur: 300, prodMult: 3 } } },
+      { label: "Refuser poliment", hint: "On garde ses distances, et une pièce.",
+        fx: { artefact: true, knowledgeMul: 8 } },
+    ],
+  },
+];
+
+/* -------------------------------------------------------------------------
    SUCCÈS — petits objectifs, +2 % de production chacun.
    `check(S)` reçoit l'état complet et renvoie true/false.
    ------------------------------------------------------------------------- */
@@ -372,6 +586,7 @@ const BY_ID = {
   artefact: Object.fromEntries(ARTEFACTS.map((a) => [a.id, a])),
   meta:     Object.fromEntries(META.map((m) => [m.id, m])),
   strata:   Object.fromEntries(STRATA.map((s) => [s.id, s])),
+  event:    Object.fromEntries(EVENTS.map((e) => [e.id, e])),
   upgrade:  Object.fromEntries(UPGRADES.concat(GLOBAL_UPGRADES).map((u) => [u.id, u])),
 };
 

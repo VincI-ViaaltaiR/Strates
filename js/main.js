@@ -4,7 +4,7 @@
    ========================================================================= */
 
 const Game = {
-  lastFrame: 0,
+  lastSim: 0,
   saveTimer: 0,
 
   init() {
@@ -13,6 +13,13 @@ const Game = {
        Sert à vérifier l'interface en milieu/fin de partie sans y jouer
        réellement. En mode démo on NE charge NI ne sauvegarde la partie
        réelle : impossible d'écraser sa progression par erreur. */
+    /* ?still=1 — fige toutes les animations. Uniquement pour les captures
+       automatisées : elles sont prises dès le chargement, donc en plein
+       milieu des animations d'apparition. */
+    if (new URLSearchParams(location.search).get('still')) {
+      document.documentElement.classList.add('no-motion');
+    }
+
     const demo = parseInt(new URLSearchParams(location.search).get('demo'), 10);
     if (demo > 0) {
       this.demoMode = true;
@@ -20,9 +27,8 @@ const Game = {
       this.bindUI();
       UI.setTab(new URLSearchParams(location.search).get('tab') || 'outils');
       UI.shopDirty = UI.wellDirty = UI.collectionDirty = UI.statsDirty = UI.logDirty = true;
-      this.lastFrame = performance.now();
       if (new URLSearchParams(location.search).get('diag')) this.diagOverlay();
-      requestAnimationFrame(this.loop.bind(this));
+      this.startClocks();
       return;
     }
 
@@ -46,32 +52,81 @@ const Game = {
       logMsg('info', "Cliquez sur <b>Creuser à la bêche</b> pour produire vos premiers sédiments, puis achetez des outils.", 0);
     }
 
+    /* Un événement resté sans réponse doit revenir au rechargement de la
+       page — sinon `pendingEvent` bloquerait tous les suivants à jamais. */
+    if (S.pendingEvent) UI.showEvent = BY_ID.event[S.pendingEvent] || null;
+    if (S.pendingEvent && !UI.showEvent) S.pendingEvent = null;   // événement supprimé du contenu
+
     this.bindUI();
     UI.setTab(S.tab || 'outils');
     UI.shopDirty = UI.wellDirty = UI.collectionDirty = UI.statsDirty = UI.logDirty = true;
 
-    this.lastFrame = performance.now();
-    requestAnimationFrame(this.loop.bind(this));
+    this.startClocks();
   },
 
-  /* -----------------------------------------------------------------------
-     LA BOUCLE. requestAnimationFrame donne ~60 appels/seconde, mais on ne
-     s'y fie PAS : on mesure le temps réellement écoulé (dt). Un onglet en
-     arrière-plan tourne à 1 fps — sans dt réel, le joueur perdrait sa
-     production. Le plafond à 1 s évite un saut monstrueux au réveil du PC
-     (ce cas est couvert par la progression hors-ligne, pas par la boucle).
-     ----------------------------------------------------------------------- */
-  loop(now) {
-    const dt = Math.min((now - this.lastFrame) / 1000, 1);
-    this.lastFrame = now;
+  /* =======================================================================
+     LES DEUX HORLOGES
 
-    Engine.tick(dt);
-    UI.render();
+     ERREUR CORRIGÉE : la simulation était pilotée par requestAnimationFrame.
+     Or le navigateur SUSPEND rAF dès que l'onglet n'est plus au premier plan.
+     Résultat : la partie gelait en arrière-plan sans être pour autant
+     comptée comme hors-ligne. Pour un jeu idle, c'est une faute de fond —
+     le genre repose entièrement sur « ça continue sans moi ».
 
-    this.saveTimer += dt;
+     La correction consiste à séparer ce qui doit avancer de ce qui doit
+     s'afficher :
+
+       · SIMULATION  → setInterval + Date.now(). Un intervalle est seulement
+                       RALENTI en arrière-plan (~1 Hz), jamais arrêté ; et
+                       comme on mesure le temps réel écoulé, un tick lent
+                       rattrape exactement ce qu'il doit.
+       · AFFICHAGE   → requestAnimationFrame. Qu'il s'arrête quand l'onglet
+                       est caché est une bonne chose : on économise le CPU
+                       pour redessiner ce que personne ne regarde.
+     ======================================================================= */
+  startClocks() {
+    this.lastSim = Date.now();
+
+    this.simTimer = setInterval(() => this.step(), 200);
+
+    /* Filet de sécurité : si le navigateur gèle carrément l'onglet (Firefox
+       le fait après une longue inactivité), l'intervalle ne tourne plus du
+       tout. Au retour de l'onglet, on rattrape immédiatement. */
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.step();
+    });
+
+    const frame = () => { UI.render(); requestAnimationFrame(frame); };
+    requestAnimationFrame(frame);
+  },
+
+  /** Un pas de simulation, calé sur le temps RÉELLEMENT écoulé. */
+  step() {
+    const now = Date.now();
+    let dt = (now - this.lastSim) / 1000;
+    this.lastSim = now;
+    if (!(dt > 0)) return;                 // horloge système reculée, ou 0
+
+    /* Absence longue (veille du PC, onglet gelé) : ce n'est plus du
+       rattrapage, c'est du hors-ligne — et donc soumis à ses règles. */
+    if (dt > 300) {
+      const r = Engine.applyOffline(dt * 1000);
+      if (r) this.showOffline(r);
+      return;
+    }
+
+    /* Rattrapage normal, par pas d'une seconde au plus : la descente
+       automatique doit pouvoir suivre la montée du coût du mètre au lieu
+       d'encaisser 60 secondes de production d'un seul bloc. */
+    let guard = 400;
+    while (dt > 0 && guard-- > 0) {
+      const s = Math.min(dt, 1);
+      Engine.tick(s);
+      dt -= s;
+      this.saveTimer += s;
+    }
+
     if (this.saveTimer > 20 && !this.demoMode) { this.saveTimer = 0; saveGame(true); }
-
-    requestAnimationFrame(this.loop.bind(this));
   },
 
   /* -----------------------------------------------------------------------
@@ -130,6 +185,7 @@ const Game = {
     });
 
     /* Menu options */
+    $('opt-version').textContent = 'v' + VERSION;
     $('btn-menu').addEventListener('click', () => $('modal-options').classList.remove('hidden'));
     document.querySelectorAll('[data-close]').forEach((b) => {
       b.addEventListener('click', () => b.closest('.modal').classList.add('hidden'));
@@ -154,9 +210,14 @@ const Game = {
         () => { wipeGame(); location.reload(); });
     });
 
-    /* Raccourcis clavier : Espace = bêche, D = descendre, S = sauvegarder. */
+    /* Raccourcis clavier : Espace = bêche, D = descendre, S = sauvegarder.
+       `e.repeat` vaut true quand le système REPÈTE la touche parce qu'elle
+       reste enfoncée (~30 frappes/seconde). Sans ce filtre, garder Espace
+       appuyé donne un auto-clic gratuit : un seul geste vaut trente coups de
+       bêche. On n'accepte donc que les vraies pressions. */
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      if (e.repeat) { if (e.code === 'Space') e.preventDefault(); return; }
       if (e.code === 'Space') { e.preventDefault(); $('btn-dig').click(); }
       else if (e.key === 'd' || e.key === 'D') $('btn-descend').click();
       else if (e.key === 's' || e.key === 'S') saveGame();
@@ -182,6 +243,14 @@ const Game = {
       t += dt;
       const cps = t < 180 ? 4 : t < 900 ? 1 : 0;
       for (let i = 0; i < cps * dt; i++) Engine.click();
+
+      /* Le joueur simulé répond au hasard aux événements. Sans cela, le tout
+         premier resterait en attente et bloquerait tous les suivants — l'état
+         de démo ne ressemblerait plus à une vraie partie. */
+      if (S.pendingEvent && t < seconds - 60) {
+        const ev = BY_ID.event[S.pendingEvent];
+        Engine.resolveEvent(S.pendingEvent, Math.floor(Math.random() * ev.choices.length));
+      }
 
       if (++step % 4 === 0) {
         for (const r of RESEARCH) Engine.buyResearch(r.id);

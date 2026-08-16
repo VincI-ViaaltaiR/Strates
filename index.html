@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STRATES</title>
-<link rel="stylesheet" href="css/style.css">
+<!-- Le `?v=` change à chaque version : sans lui, un navigateur qui a déjà
+     visité le jeu resservirait ses anciens fichiers depuis son cache et le
+     joueur resterait bloqué sur une version périmée sans le savoir. -->
+<link rel="stylesheet" href="css/style.css?v=1.1.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
 </head>
 <body>
@@ -44,6 +47,9 @@
     <div id="well-col"></div>
 
     <div id="well-ctl">
+      <!-- Effets temporaires issus des événements de forage -->
+      <div id="buffs"></div>
+
       <div class="dig-head">
         <span id="dig-strata">Terre végétale</span>
         <span id="dig-eta">—</span>
@@ -157,7 +163,7 @@
 
 <div class="modal hidden" id="modal-options">
   <div class="modal-box">
-    <h2>Options</h2>
+    <h2>Options <span id="opt-version" class="version">v—</span></h2>
     <div class="modal-row">
       <button id="opt-save">Sauvegarder maintenant</button>
       <button id="opt-export">Exporter (copie le code)</button>
@@ -170,6 +176,17 @@
       <button id="opt-wipe" class="danger">Effacer la partie</button>
       <button data-close>Fermer</button>
     </div>
+  </div>
+</div>
+
+<!-- Événement de forage : volontairement SANS bouton de fermeture.
+     Le puits pose une question, on y répond. -->
+<div class="modal hidden" id="modal-event">
+  <div class="modal-box event-box">
+    <div class="ev-strata" id="ev-strata"></div>
+    <h2 id="ev-title">…</h2>
+    <p id="ev-text">…</p>
+    <div id="ev-choices"></div>
   </div>
 </div>
 
@@ -186,11 +203,11 @@
 
 <!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
      en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
-<script src="js/utils.js"></script>
-<script src="js/content.js"></script>
-<script src="js/state.js"></script>
-<script src="js/engine.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/main.js"></script>
+<script src="js/utils.js?v=1.1.0"></script>
+<script src="js/content.js?v=1.1.0"></script>
+<script src="js/state.js?v=1.1.0"></script>
+<script src="js/engine.js?v=1.1.0"></script>
+<script src="js/ui.js?v=1.1.0"></script>
+<script src="js/main.js?v=1.1.0"></script>
 </body>
 </html>

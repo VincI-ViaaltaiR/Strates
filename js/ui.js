@@ -28,6 +28,10 @@ const UI = {
 function toast(msg, ms = 2600) {
   const box = $('toasts');
   if (!box) return;
+  /* Plafond à 3. Quand plusieurs succès tombent d'un coup — retour d'un long
+     hors-ligne, franchissement d'un palier — la pile recouvrait la moitié de
+     l'écran, y compris la fenêtre d'événement qui attend une réponse. */
+  while (box.children.length >= 3) box.firstChild.remove();
   const t = el('div', 'toast', msg);
   box.appendChild(t);
   setTimeout(() => t.classList.add('out'), ms - 400);
@@ -490,6 +494,68 @@ UI.showArtefactFlash = function (a) {
   box.onclick = () => box.classList.add('hidden');
 };
 
+/* =========================================================================
+   ÉVÉNEMENTS DE FORAGE
+   ========================================================================= */
+UI.showEventModal = function (ev) {
+  const st = Engine.strataAt(S.depth);
+  $('ev-strata').textContent = `${st.name} · ${fmtInt(S.depth)} m`;
+  $('ev-title').textContent = ev.title;
+  $('ev-text').textContent = ev.text;
+  $('modal-event').querySelector('.event-box').style.setProperty('--c', st.color);
+
+  const box = $('ev-choices');
+  box.innerHTML = '';
+  ev.choices.forEach((ch, i) => {
+    const risky = ch.risk !== undefined;
+
+    /* Les conséquences sont chiffrées ICI, sur l'état courant. Un choix qu'on
+       ne peut pas évaluer n'est pas un choix : sans ces valeurs, comparer
+       « du sédiment » à « une descente moins chère » revient à tirer à pile
+       ou face. Pour un pari, on montre les DEUX issues avec leur probabilité. */
+    let effects;
+    if (risky) {
+      const win  = Engine.previewFx(ch.fx || {}).join(' · ');
+      const lose = Engine.previewFx(ch.fail || {}).join(' · ');
+      effects =
+        `<span class="evc-odds ok">${Math.round(ch.risk * 100)} %</span> ${win}<br>
+         <span class="evc-odds ko">${Math.round((1 - ch.risk) * 100)} %</span> ${lose}`;
+    } else {
+      effects = Engine.previewFx(ch.fx || {}).join(' · ');
+    }
+
+    const b = el('button', 'ev-choice' + (risky ? ' risky' : ''),
+      `<span class="evc-label">${ch.label}</span>
+       <span class="evc-hint">${ch.hint || ''}</span>
+       <span class="evc-fx">${effects}</span>`);
+    b.addEventListener('click', () => {
+      $('modal-event').classList.add('hidden');
+      const r = Engine.resolveEvent(ev.id, i);
+      if (r) toast((r.ok ? '' : '⚠ ') + ev.title + ' — ' + ch.label);
+      saveGame(true);          // un événement est un moment : on le fige tout de suite
+    });
+    box.appendChild(b);
+  });
+
+  $('modal-event').classList.remove('hidden');
+};
+
+/* Bandeau des effets temporaires actifs. Sans lui, le joueur bénéficie d'un
+   ×3 de production sans jamais savoir qu'il l'a, ni quand il s'arrête. */
+UI.refreshBuffs = function () {
+  const box = $('buffs');
+  const live = (S.buffs || []).filter((b) => b.until > S.playTime);
+  if (!live.length) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  box.innerHTML = live.map((b) => {
+    const bad = (b.prodMult && b.prodMult < 1) || (b.digCostMult && b.digCostMult > 1);
+    return `<div class="buff${bad ? ' bad' : ''}">
+        <span class="bf-name">${b.name}</span>
+        <span class="bf-time">${fmtTime(b.until - S.playTime)}</span>
+      </div>`;
+  }).join('');
+};
+
 /* Nombre flottant au clic sur la bêche : le retour visuel qui rend le clic
    agréable. Sans lui, cliquer donne l'impression que rien ne se passe. */
 UI.floatGain = function (x, y, txt) {
@@ -520,9 +586,11 @@ UI.render = function () {
   if (UI.statsDirty)      { UI.buildStats(); UI.statsDirty = false; }
   if (UI.logDirty)        { UI.refreshLog(); UI.logDirty = false; }
   if (UI.flashArtefact)   { UI.showArtefactFlash(UI.flashArtefact); UI.flashArtefact = null; }
+  if (UI.showEvent)       { UI.showEventModal(UI.showEvent); UI.showEvent = null; }
 
   UI.refreshHeader();
   UI.refreshWell();
+  UI.refreshBuffs();
   UI.refreshTools();
   UI.refreshUpgrades();
   UI.refreshResearch();

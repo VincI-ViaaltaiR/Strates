@@ -154,6 +154,14 @@ const Engine = {
     /* --- 7. Succès : +2 % chacun. Petit, mais ça récompense l'exploration --- */
     c.prodMult *= 1 + 0.02 * Object.keys(S.achievements).length;
 
+    /* --- 7 bis. Effets temporaires issus des événements de forage --- */
+    for (const b of S.buffs || []) {
+      if (b.until <= S.playTime) continue;
+      if (b.prodMult)           c.prodMult *= b.prodMult;
+      if (b.digCostMult)        c.digCostMult *= b.digCostMult;
+      if (b.artefactChanceMult) artChanceMult *= b.artefactChanceMult;
+    }
+
     /* --- 8. Production totale = Σ(outils) × multiplicateur global --- */
     let base = 0;
     TOOLS.forEach((t) => {
@@ -275,8 +283,165 @@ const Engine = {
     /* Tirage d'artefact. */
     if (Math.random() < S.calc.artefactChance) this.findArtefact(st, quiet);
 
+    /* Tirage d'événement. Jamais en mode silencieux : un événement attend une
+       réponse du joueur, il n'a aucun sens pendant une simulation hors-ligne. */
+    if (!quiet) this.rollEvent(st);
+
     UI.wellDirty = true;
     return true;
+  },
+
+  /* -----------------------------------------------------------------------
+     ÉVÉNEMENTS DE FORAGE
+     ----------------------------------------------------------------------- */
+
+  /* TOUTES les durées liées aux événements (délai de repos, effets
+     temporaires) sont comptées en TEMPS DE JEU — `S.playTime`, en secondes —
+     et jamais avec Date.now().
+
+     POURQUOI c'est important : l'horloge murale et le temps de jeu ne sont
+     pas la même chose. Ils divergent dès qu'on simule (8 h de jeu calculées
+     en 0,3 s au banc d'essai : tout se serait retrouvé bloqué par un délai de
+     45 s « réelles »), et ils divergent aussi en progression hors-ligne.
+     Le temps de jeu est la seule référence que le joueur perçoit réellement. */
+  rollEvent(strata) {
+    if (S.pendingEvent) return;                       // un seul à la fois
+    if (S.playTime < (S.nextEventAt || 0)) return;    // temps de repos obligatoire
+    if (Math.random() >= BAL.eventChance) return;
+
+    const pool = EVENTS.filter((e) =>
+      (!e.strata || e.strata.includes(strata.id)) && S.depth >= (e.minDepth || 0));
+    if (!pool.length) return;
+
+    const ev = pick(pool);
+    S.pendingEvent = ev.id;
+    S.nextEventAt = S.playTime + BAL.eventCooldown;
+    UI.showEvent = ev;
+  },
+
+  /**
+   * Traduit un bloc d'effets en conséquences CHIFFRÉES, calculées sur l'état
+   * courant. Utilisé par la fenêtre d'événement, avant que le joueur choisisse.
+   *
+   * POURQUOI c'est indispensable : « du sédiment, tout de suite » face à
+   * « descente moins chère pendant 3 min » n'est pas un choix, c'est un tirage
+   * au sort — les deux options ne sont pas dans la même unité et leur valeur
+   * dépend entièrement de la situation. En affichant « +18 M σ » contre
+   * « prochain mètre : 236 M → 189 M σ », on rend les deux comparables.
+   * Un dilemme n'est intéressant que si le joueur peut l'évaluer.
+   */
+  previewFx(fx) {
+    const st = this.strataAt(S.depth);
+    const c = S.calc;
+    const out = [];
+
+    if (fx.sedimentSec) {
+      const v = c.sedPerSec * fx.sedimentSec;
+      out.push(`${fx.sedimentSec > 0 ? '+' : '−'}${fmt(Math.abs(v))} σ ` +
+               `<em>(${fmtTime(Math.abs(fx.sedimentSec))} de production)</em>`);
+    }
+    if (fx.sedimentFrac) {
+      const v = S.sediment * fx.sedimentFrac;
+      out.push(`${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))} σ ` +
+               `<em>(${Math.round(Math.abs(fx.sedimentFrac) * 100)} % de la réserve)</em>`);
+    }
+    if (fx.knowledgeMul) {
+      out.push(`+${fmt(st.knowledge * fx.knowledgeMul * c.knowledgeMult)} ✦`);
+    }
+    if (fx.artefact) out.push(`1 artefact de <em>${st.name}</em>`);
+    if (fx.depth)    out.push(`${fx.depth > 0 ? '+' : '−'}${Math.abs(fx.depth)} m de profondeur`);
+
+    if (fx.buff) {
+      const b = fx.buff;
+      if (b.prodMult) {
+        /* On chiffre aussi le gain total sur la durée : « ×1,5 » ne dit rien,
+           « ≈ +42 M σ sur 5 min » se compare à une somme immédiate. */
+        const delta = c.sedPerSec * (b.prodMult - 1) * b.dur;
+        out.push(`production ×${fmt(b.prodMult, 2)} pendant ${fmtTime(b.dur)} ` +
+                 `<em>(≈ ${delta >= 0 ? '+' : '−'}${fmt(Math.abs(delta))} σ)</em>`);
+      }
+      if (b.digCostMult) {
+        const now = this.digCost(S.depth);
+        out.push(`prochain mètre ${fmt(now)} → <b>${fmt(now * b.digCostMult)} σ</b> ` +
+                 `<em>pendant ${fmtTime(b.dur)}</em>`);
+      }
+      if (b.artefactChanceMult) {
+        out.push(`chance d'artefact ×${fmt(b.artefactChanceMult, 2)} pendant ${fmtTime(b.dur)}`);
+      }
+    }
+
+    if (!out.length) out.push('aucune conséquence');
+    return out;
+  },
+
+  /** Le joueur a tranché : on applique, on raconte, on referme. */
+  resolveEvent(id, choiceIndex) {
+    const ev = BY_ID.event[id];
+    S.pendingEvent = null;
+    if (!ev) return;
+    const ch = ev.choices[choiceIndex];
+    if (!ch) return;
+
+    /* `risk` = probabilité de RÉUSSITE. En cas d'échec, c'est `fail` qui
+       s'applique — et un choix risqué sans `fail` ne fait simplement rien. */
+    let fx = ch.fx || {};
+    let ok = true;
+    if (ch.risk !== undefined && Math.random() >= ch.risk) { fx = ch.fail || {}; ok = false; }
+
+    const parts = this.applyEventFx(fx);
+    this.computeStats();
+
+    const verdict = ch.risk === undefined ? '' : ok ? ' <i>Ça passe.</i>' : ' <i>Ça ne passe pas.</i>';
+    logMsg('event', `<b>${ev.title}</b> — « ${ch.label} ».${verdict}` +
+      (parts.length ? ' ' + parts.join(' · ') : ''));
+    UI.shopDirty = true;
+    return { ok, parts };
+  },
+
+  /** Applique un bloc d'effets d'événement et renvoie de quoi le raconter. */
+  applyEventFx(fx) {
+    const st = this.strataAt(S.depth);
+    const out = [];
+
+    const addSediment = (d) => {
+      S.sediment = Math.max(0, S.sediment + d);
+      if (d > 0) { S.totalSediment += d; S.runSediment += d; }
+      out.push((d >= 0 ? '+' : '−') + fmt(Math.abs(d)) + ' σ');
+    };
+
+    if (fx.sedimentFrac) addSediment(S.sediment * fx.sedimentFrac);
+    if (fx.sedimentSec)  addSediment(S.calc.sedPerSec * fx.sedimentSec);
+
+    if (fx.knowledgeMul) {
+      const g = st.knowledge * fx.knowledgeMul * S.calc.knowledgeMult;
+      S.knowledge += g;
+      out.push('+' + fmt(g) + ' ✦');
+    }
+
+    if (fx.artefact) {
+      this.findArtefact(st, false);
+      UI.collectionDirty = true;
+    }
+
+    if (fx.depth) {
+      S.depth = Math.max(0, S.depth + fx.depth);
+      if (S.depth > S.maxDepth)  S.maxDepth = S.depth;
+      if (S.depth > S.bestDepth) S.bestDepth = S.depth;
+      if (fx.depth > 0) S.totalDepthDug += fx.depth;
+      out.push((fx.depth > 0 ? '+' : '−') + Math.abs(fx.depth) + ' m');
+      UI.wellDirty = true;
+    }
+
+    if (fx.buff) {
+      const b = Object.assign({}, fx.buff, { until: S.playTime + fx.buff.dur });
+      /* Un même effet ne se cumule pas avec lui-même : il se renouvelle.
+         Sinon deux « Forage accordé » d'affilée donneraient −70 % de coût. */
+      S.buffs = S.buffs.filter((x) => x.name !== b.name);
+      S.buffs.push(b);
+      out.push(`<i>${b.name}</i> ${fmtTime(b.dur)}`);
+    }
+
+    return out;
   },
 
   findArtefact(strata, quiet) {
@@ -318,6 +483,11 @@ const Engine = {
      LE TICK — appelé ~60 fois par seconde avec dt en secondes.
      ----------------------------------------------------------------------- */
   tick(dt) {
+    /* Purge des effets temporaires expirés, avant tout calcul. */
+    if (S.buffs && S.buffs.length && S.buffs.some((b) => b.until <= S.playTime)) {
+      S.buffs = S.buffs.filter((b) => b.until > S.playTime);
+    }
+
     this.computeStats();
 
     const gain = S.calc.sedPerSec * dt;

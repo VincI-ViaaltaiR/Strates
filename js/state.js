@@ -24,6 +24,11 @@ function newRun(keep = {}) {
     upgrades: {},                   // { up_pelle_0: true, ... }
     research: {},                   // { stratigraphie: true, ... }
 
+    /* --- Événements de forage --- */
+    buffs: [],            // effets temporaires actifs : [{ name, until, prodMult… }]
+    pendingEvent: null,   // id de l'événement en attente de réponse (survit au rechargement)
+    nextEventAt: 0,       // horodatage : pas de nouvel événement avant
+
     /* --- Statistiques de la run --- */
     runStart: Date.now(),
     runSediment: 0,
@@ -110,6 +115,7 @@ function loadGame() {
       if (!S[k] || typeof S[k] !== 'object') S[k] = {};
     });
     if (!Array.isArray(S.log)) S.log = [];
+    if (!Array.isArray(S.buffs)) S.buffs = [];
     return true;
   } catch (e) {
     console.error('Sauvegarde corrompue :', e);

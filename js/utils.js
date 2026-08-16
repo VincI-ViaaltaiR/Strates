@@ -51,13 +51,25 @@ function fmtInt(n) {
   return Math.floor(n).toLocaleString('fr-FR');
 }
 
-/** Formate une durée en secondes → "3 j 4 h", "12 min 30 s", "45 s". */
+/**
+ * Formate une durée en secondes → "3 j 4 h", "12 min 30 s", "5 min", "45 s".
+ * On omet l'unité inférieure quand elle vaut zéro : « 5 min » se lit mieux
+ * que « 5 min 0 s », et ces durées s'affichent partout (effets temporaires,
+ * temps avant le prochain mètre, aperçus d'événements).
+ */
 function fmtTime(sec) {
   if (!isFinite(sec) || sec < 0) return '—';
   if (sec < 60) return Math.ceil(sec) + ' s';
-  if (sec < 3600) return Math.floor(sec / 60) + ' min ' + Math.floor(sec % 60) + ' s';
-  if (sec < 86400) return Math.floor(sec / 3600) + ' h ' + Math.floor((sec % 3600) / 60) + ' min';
-  return Math.floor(sec / 86400) + ' j ' + Math.floor((sec % 86400) / 3600) + ' h';
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return s ? `${m} min ${s} s` : `${m} min`;
+  }
+  if (sec < 86400) {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+  const j = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600);
+  return h ? `${j} j ${h} h` : `${j} j`;
 }
 
 /** Borne une valeur entre min et max. */

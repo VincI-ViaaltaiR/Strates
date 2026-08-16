@@ -44,6 +44,25 @@ Quatre ressources, chacune avec un rôle distinct :
 | **Éclats ◈** | monnaie de prestige, dépensée dans l'arbre Mémoire | oui |
 | **Collection** | les artefacts trouvés, chacun donnant un bonus permanent | **oui, toujours** |
 
+### Les événements de forage
+
+Environ tous les quart d'heure, le puits pose une question : venue d'eau, trépan
+coincé, porte verrouillée de l'intérieur. Chacun propose deux réponses, sans
+bonne réponse évidente — on échange du sédiment contre du temps, de la sécurité
+contre du savoir. Certains choix sont des paris affichés (« 55 % de réussite »).
+
+Ils existent pour deux raisons précises :
+
+- **combler les strates larges.** *La Nappe* fait 45 m et *le Socle* 50 m : on y
+  passait une heure sans que rien de neuf n'arrive ;
+- **rendre le monde interrogatif.** Sans eux, le jeu ne demande jamais rien au
+  joueur : le carnet raconte, les artefacts intriguent, mais tout se subit.
+
+Ils sont calibrés pour **rythmer sans accélérer** : au banc d'essai, la
+profondeur atteinte en 8 h est la même avec et sans eux. Certains ouvrent des
+**effets temporaires** (production, coût de descente), affichés en haut de la
+colonne du puits avec leur temps restant.
+
 ### L'arbitrage central
 
 Le sédiment sert **à la fois** à acheter des outils et à descendre. Descendre
@@ -99,6 +118,19 @@ Six fichiers, une responsabilité chacun, chargés dans cet ordre :
 | [`js/ui.js`](js/ui.js) | tout le rendu DOM | les règles |
 | [`js/main.js`](js/main.js) | démarrage, boucle, contrôles clavier/souris | — |
 
+### Les deux horloges
+
+La **simulation** tourne sur `setInterval` + `Date.now()` ; l'**affichage** sur
+`requestAnimationFrame`. Cette séparation n'est pas cosmétique : le navigateur
+*suspend* rAF dès que l'onglet passe en arrière-plan, ce qui gelait la partie
+sans qu'elle soit pour autant comptée comme hors-ligne. Un intervalle, lui, est
+seulement ralenti (~1 Hz) ; comme on mesure le temps réel écoulé, rien n'est
+perdu. Un `visibilitychange` sert de filet si le navigateur gèle l'onglet.
+
+Corollaire, valable pour tout le moteur : **les durées de jeu se comptent en
+`S.playTime`, jamais avec `Date.now()`**. Les deux divergent dès qu'on simule
+(8 h calculées en 0,3 s) ou qu'on rattrape du hors-ligne.
+
 Deux principes tiennent l'ensemble :
 
 **1. `engine.js` ne touche jamais au DOM.** C'est ce qui permet de simuler 8 h
@@ -144,7 +176,13 @@ vérifier l'affichage en milieu ou en fin de partie sans y jouer réellement.
 index.html?demo=20000                  ≈ 5 h 30 de jeu, onglet Outils
 index.html?demo=20000&tab=collection   idem, onglet Collection
 index.html?demo=20000&diag=1           + mesures de mise en page
+index.html?still=1                     fige les animations (captures d'écran)
 ```
+
+`still=1` est indispensable pour les captures automatisées : elles sont prises
+dès le chargement, c'est-à-dire pendant les animations d'apparition — les
+fenêtres ressortaient vides sur les images. Le jeu respecte par ailleurs le
+réglage système `prefers-reduced-motion`.
 
 En mode démo, la partie réelle n'est **ni chargée ni sauvegardée** : aucun
 risque d'écraser sa progression.
@@ -154,7 +192,7 @@ risque d'écraser sa progression.
 ## Contenu actuel
 
 10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches ·
-31 artefacts · 10 nœuds de mémoire · 20 succès.
+31 artefacts · 15 événements de forage · 10 nœuds de mémoire · 20 succès.
 
 Repères mesurés au banc d'essai (jeu actif, sans temps hors-ligne) :
 
@@ -169,6 +207,56 @@ Repères mesurés au banc d'essai (jeu actif, sans temps hors-ligne) :
 Le Cœur (470 m) demande une troisième fouille.
 
 ---
+
+## Partager le jeu
+
+Le jeu est du HTML statique sans compilation : **n'importe quel hébergeur de
+fichiers le sert tel quel**. Inutile de coder un menu ou un mécanisme de mise à
+jour — servir le jeu depuis une URL rend le problème sans objet, puisque le
+navigateur récupère la dernière version à chaque ouverture.
+
+### GitHub Pages (recommandé)
+
+Le dépôt est déjà sur GitHub. Dans **Settings → Pages** : source
+« Deploy from a branch », branche `main`, dossier `/ (root)`, puis Save.
+Une à deux minutes plus tard, le jeu est en ligne :
+
+```
+https://vinci-viaaltair.github.io/Strates/
+```
+
+Chaque `git push` met la page à jour automatiquement. La personne à qui vous
+donnez l'adresse la met en favori et joue toujours à la dernière version.
+
+Pages gratuit exige un **dépôt public**. Pour rester privé : **Cloudflare Pages**
+ou **Netlify**, gratuits eux aussi, connectés au dépôt GitHub, avec le même
+déploiement automatique à chaque push.
+
+### La discipline à tenir : le cache
+
+Un navigateur qui a déjà ouvert le jeu resservira ses fichiers en cache, et le
+joueur restera bloqué sur une version périmée sans le savoir. D'où, à **chaque
+livraison** :
+
+1. incrémenter `VERSION` en haut de [`js/content.js`](js/content.js) ;
+2. remplacer le `?v=…` des balises `<script>` et `<link>` de
+   [`index.html`](index.html) par le même numéro.
+
+La version s'affiche dans le menu **Options** : quand quelqu'un signale un
+problème, la première question est toujours « quelle version ? ».
+
+### Les sauvegardes ne suivent pas
+
+Une partie est stockée dans le `localStorage`, qui est **lié au domaine**. La
+partie jouée en local (`file://`) et celle jouée en ligne sont donc deux parties
+distinctes. Le menu Options permet d'exporter un code et de le réimporter
+ailleurs pour transférer sa progression.
+
+### Sans hébergement
+
+Envoyer le dossier zippé fonctionne (le destinataire dézippe et ouvre
+`index.html`), mais il faudra renvoyer un fichier à chaque correction — c'est
+précisément ce que l'URL évite.
 
 ## Pistes pour la suite
 

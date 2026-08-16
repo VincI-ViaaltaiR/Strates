@@ -35,6 +35,8 @@
 const L = [];
 const say = (s) => L.push(s);
 
+let eventsResolved = 0;
+
 function autoplay(seconds, marks) {
   const dt = 0.5;
   const hit = {};
@@ -43,6 +45,15 @@ function autoplay(seconds, marks) {
   while (t < seconds) {
     Engine.tick(dt);
     t += dt;
+
+    /* Les événements attendent une réponse humaine. Le joueur simulé répond
+       au hasard : c'est volontaire — on veut mesurer leur effet MOYEN sur la
+       courbe, pas ce que donnerait un joueur qui choisit toujours le mieux. */
+    if (S.pendingEvent) {
+      const ev = BY_ID.event[S.pendingEvent];
+      Engine.resolveEvent(S.pendingEvent, Math.floor(Math.random() * ev.choices.length));
+      eventsResolved++;
+    }
 
     /* Le joueur clique à la bêche : beaucoup au début (c'est la seule source
        de sédiment tant qu'on n'a aucun outil), puis de moins en moins.
@@ -122,6 +133,7 @@ try {
   say(`   améliorations    ${Object.keys(S.upgrades).length} / ${UPGRADES.length + GLOBAL_UPGRADES.length}`);
   say(`   succès           ${Object.keys(S.achievements).length} / ${ACHIEVEMENTS.length}`);
   say(`   outils           ${TOOLS.map((t) => (S.tools[t.id] || 0)).join(' · ')}`);
+  say(`   événements       ${eventsResolved} résolus (1 par ${(HOURS * 3600 / Math.max(1, eventsResolved) / 60).toFixed(1)} min)`);
   say(`   prestige ouvert  ${S.calc.prestigeUnlocked ? 'OUI' : 'NON'}`);
   say(`   éclats si reset  ${Engine.shardsFor(S.maxDepth)}`);
 
@@ -154,6 +166,12 @@ try {
     ['prérequis recherche valides', RESEARCH.every(r => r.req.every(q => BY_ID.research[q]))],
     ['prérequis méta valides',      META.every(m => m.req.every(q => BY_ID.meta[q]))],
     ['chaque strate a des artefacts', STRATA.every(s => (ARTEFACTS_BY_STRATA[s.id] || []).length >= 3)],
+    ['ids événements uniques', new Set(EVENTS.map(e => e.id)).size === EVENTS.length],
+    ['événements : 2 choix min', EVENTS.every(e => e.choices && e.choices.length >= 2)],
+    ['événements : strates existantes', EVENTS.every(e => !e.strata || e.strata.every(s => BY_ID.strata[s]))],
+    ['événements : choix risqué → fail', EVENTS.every(e => e.choices.every(c => c.risk === undefined || c.fail))],
+    ['buffs purgés', S.buffs.every(b => b.until > S.playTime)],
+    ['événements déclenchés', eventsResolved > 20],
     ['achat groupé cohérent', (() => { S.buyMode = 10; const a = Engine.toolCostBulk('pelle', 10); const b = Engine.toolCost('pelle', 0) + Engine.toolCost('pelle', 1); return a > b; })()],
     ['export/import',         (() => { const c = exportSave(); return typeof c === 'string' && c.length > 20; })()],
   ];
