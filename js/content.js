@@ -23,7 +23,7 @@
    version ? ». À incrémenter en même temps que le `?v=` des balises
    <script>/<link> de index.html, qui force le navigateur à recharger les
    fichiers au lieu de resservir ceux qu'il a en cache. */
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
@@ -484,21 +484,29 @@ const HEART_BONUS = { prodMult: 1.25, shardMult: 1.25 };
 const CHALLENGES = [
   {
     id: 'c_manuel', name: 'À la main', depth: 120,
+    flavor: "Le treuil a lâché, et la pièce de rechange n'existe plus nulle part. On finit " +
+            "comme on a commencé : un mètre, un geste.",
     rule: "La descente automatique est coupée : chaque mètre se déclenche à la main.",
     reward: "Production ×1,4, définitivement.", fx: { prodMult: 1.4 },
   },
   {
     id: 'c_aveugle', name: 'Fouille aveugle', depth: 150,
+    flavor: "Consigne écrite, sans signature : ne rien remonter, ne rien consigner, ne rien " +
+            "montrer. Quelqu'un ne veut pas savoir ce qu'il y a là-dessous.",
     rule: "Aucun artefact n'est trouvé, donc aucun savoir : pas une seule recherche de la fouille.",
     reward: "Coût de descente ×0,85, définitivement.", fx: { digCostMult: 0.85 },
   },
   {
     id: 'c_pauvre', name: 'Outillage réduit', depth: 130,
+    flavor: "Le matériel lourd est parti sur un autre chantier. On ne vous a pas dit lequel, " +
+            "ni pourquoi il était plus urgent que celui-ci.",
     rule: "Les quatre derniers outils restent introuvables, quelle que soit la profondeur.",
     reward: "Chance d'artefact ×1,25, définitivement.", fx: { artefactChanceMult: 1.25 },
   },
   {
     id: 'c_silence', name: 'Chantier muet', depth: 180,
+    flavor: "Cette fois, le puits ne dit rien. Pas une poche de gaz, pas une fissure, pas une " +
+            "porte. C'est bien plus inquiétant que le contraire.",
     rule: "Aucun événement de forage : personne ne vous propose rien, personne ne vous aide.",
     reward: "Éclats du comblement ×1,3, définitivement.", fx: { shardMult: 1.3 },
   },
@@ -533,6 +541,9 @@ const UNIT_TRAITS = [
   { id: 't_jeune',   name: 'Unité jeune',         desc: "Outils ×0,75 — mais savoir ×0,7.",
     fx: { toolCostMult: 0.75, knowledgeMult: 0.7 } },
 ];
+
+/** Part de la nature d'une unité quittée qui reste acquise, définitivement. */
+const UNIT_INHERIT = 0.3;
 
 /** Bonus permanents achetés avec les Fragments d'unité. Survivent au départ. */
 const FRAGMENTS = [
@@ -931,10 +942,12 @@ const HINTS = [
       <b>Ingénierie</b> vise les éclats — la progression d'une fouille à l'autre.<br>
       <b>Archéologie</b> vise le savoir et la collection.<br>
       <b>Spéléologie</b> vise la profondeur, et donc les strates lointaines.<br><br>
-      Aucune n'est meilleure : elles donnent des parties de formes différentes. Mener
-      <b>3 fouilles</b> sous la même doctrine en acquiert la <b>maîtrise</b>, un bonus
-      permanent conservé ensuite quoi qu'il arrive — de quoi valoir la peine de toutes
-      les essayer.`,
+      Aucune n'est meilleure : elles donnent des parties de formes différentes.<br><br>
+      <b>La maîtrise, concrètement :</b> une fouille « compte » quand vous la menez jusqu'à
+      son <b>comblement</b> sous cette doctrine. Au troisième comblement sous la même
+      doctrine, vous gagnez son bonus permanent — conservé ensuite quoi qu'il arrive, même
+      en changeant de doctrine. Les trois pastilles sous chaque carte indiquent où vous en
+      êtes. Rien ne vous oblige à enchaîner : les fouilles se cumulent dans le désordre.`,
   },
   {
     id: 'h_offline', title: 'Le chantier tourne sans vous',

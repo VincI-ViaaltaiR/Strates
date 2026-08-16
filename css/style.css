@@ -327,6 +327,7 @@ main > * { min-height: 0; }
 .chal.done   { border-left-color: var(--green); opacity: .7; cursor: default; }
 .chal-name { font-weight: 600; font-size: 14px; }
 .chal-depth { margin-left: auto; font: 11px var(--mono); color: var(--txt-dim); }
+.chal-flavor { font-size: 12px; font-style: italic; color: #9c8f80; margin: 4px 0; line-height: 1.5; }
 .chal-rule { font-size: 12.5px; color: var(--txt-dim); margin: 4px 0; line-height: 1.5; }
 .chal-reward { font: 11.5px var(--mono); color: var(--amber); }
 .chal.done .chal-reward { color: var(--green); }
@@ -339,6 +340,12 @@ main > * { min-height: 0; }
 .unit-grid div span { display: block; font: 700 20px var(--mono); color: #8fb8c9; }
 .unit-grid div small { font-size: 10.5px; color: var(--txt-dim); text-transform: uppercase; }
 .unit-trait { text-align: center; font-size: 13px; margin: 10px 0; color: #cfe0e8; }
+.unit-inherit {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--radius);
+  background: rgba(143,184,201,.08); border: 1px solid #3d5560;
+  font-size: 12px; line-height: 1.55; color: #a9c3ce;
+}
+.buyall { margin-left: auto; padding: 5px 12px; font-size: 12px; }
 #units-box .big { width: 100%; margin-bottom: 12px; }
 .card.frag { border-left-color: #5a7f92; }
 .card.frag.afford { border-left-color: #8fb8c9; }

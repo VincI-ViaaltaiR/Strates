@@ -7,7 +7,7 @@
 <!-- Le `?v=` change à chaque version : sans lui, un navigateur qui a déjà
      visité le jeu resservirait ses anciens fichiers depuis son cache et le
      joueur resterait bloqué sur une version périmée sans le savoir. -->
-<link rel="stylesheet" href="css/style.css?v=2.0.0">
+<link rel="stylesheet" href="css/style.css?v=2.1.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
 </head>
 <body>
@@ -108,13 +108,19 @@
 
     <!-- AMÉLIORATIONS -->
     <div class="tabpane hidden" id="pane-ameliorations">
-      <div class="pane-head"><p>Achats uniques, payés en sédiment. Elles doublent un outil ou boostent tout le chantier.</p></div>
+      <div class="pane-head">
+        <p>Achats uniques, payés en sédiment. Elles doublent un outil ou boostent tout le chantier.</p>
+        <button id="buy-all-up" class="buyall">Tout acheter</button>
+      </div>
       <div id="list-upgrades" class="list"></div>
     </div>
 
     <!-- RECHERCHE -->
     <div class="tabpane hidden" id="pane-recherche">
-      <div class="pane-head"><p>Payées en <b>savoir ✦</b>, gagné en exhumant des artefacts. <i>Perdues au comblement du puits.</i></p></div>
+      <div class="pane-head">
+        <p>Payées en <b>savoir ✦</b>, gagné en exhumant des artefacts. <i>Perdues au comblement du puits.</i></p>
+        <button id="buy-all-res" class="buyall">Tout acheter</button>
+      </div>
       <div id="list-research" class="list"></div>
     </div>
 
@@ -176,10 +182,13 @@
             <div><span id="unit-left">0</span><small>unités quittées</small></div>
           </div>
           <div class="unit-trait" id="unit-trait"></div>
-          <p class="dc-intro">Partir abandonne <b>tout</b> : éclats, mémoire gravée, doctrines,
-            recherches. Ne survivent que la collection, les succès, les maîtrises, les défis
-            relevés — et les <b>fragments</b>, dont les bonus dépassent de loin ceux de la
-            mémoire. Chaque graine a sa propre nature.</p>
+          <p class="dc-intro">Partir abandonne la mémoire gravée, les doctrines et les
+            recherches, et vous laisse <b>30 % des éclats gagnés à vie</b>. Survivent aussi la
+            collection, les succès, les maîtrises et les défis relevés.<br>
+            Vous gagnez des <b>fragments</b>, dont les bonus dépassent de loin ceux de la
+            mémoire — et <b>30 % de la nature</b> de la graine que vous quittez, définitivement.
+            Ces natures se cumulent : après plusieurs départs, vous ne fouillez plus une
+            planète mais la somme de toutes celles que vous avez traversées.</p>
           <button id="btn-leave" class="big danger">Partir vers une autre unité</button>
           <div id="fragment-list" class="list"></div>
         </div>
@@ -282,12 +291,12 @@
 
 <!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
      en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
-<script src="js/utils.js?v=2.0.0"></script>
-<script src="js/content.js?v=2.0.0"></script>
-<script src="js/state.js?v=2.0.0"></script>
-<script src="js/audio.js?v=2.0.0"></script>
-<script src="js/engine.js?v=2.0.0"></script>
-<script src="js/ui.js?v=2.0.0"></script>
-<script src="js/main.js?v=2.0.0"></script>
+<script src="js/utils.js?v=2.1.0"></script>
+<script src="js/content.js?v=2.1.0"></script>
+<script src="js/state.js?v=2.1.0"></script>
+<script src="js/audio.js?v=2.1.0"></script>
+<script src="js/engine.js?v=2.1.0"></script>
+<script src="js/ui.js?v=2.1.0"></script>
+<script src="js/main.js?v=2.1.0"></script>
 </body>
 </html>

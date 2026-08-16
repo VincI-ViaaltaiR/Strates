@@ -216,14 +216,28 @@ redevient difficile là où l'on croyait avoir tout automatisé.
 <summary>Ouvrir</summary>
 
 Une fois le Cœur touché, on peut **partir** : abandonner cette graine pour une
-autre. C'est le reset le plus dur du jeu — éclats, mémoire gravée, doctrines,
-recherches, tout disparaît. Ne survivent que ce qui relève de la
-**connaissance** (collection, succès, maîtrises, défis relevés) et les
-**fragments d'unité**, dont les bonus dépassent de loin ceux de la mémoire.
+autre. On perd la mémoire gravée, les doctrines et les recherches ; on garde la
+collection, les succès, les maîtrises, les défis relevés, **30 % des éclats
+gagnés à vie** — et on emporte des **fragments d'unité**.
 
 Chaque unité tire un **trait** (roche tendre, nécropole, croûte dense…) qui
-change la forme de la planète : on ne rejoue jamais tout à fait la même partie.
-Neuf unités en tout, numérotées comme l'indiquait la plaque de la Machinerie.
+change la forme de la planète. Surtout, **chaque graine quittée lègue 30 % de sa
+nature, définitivement et cumulativement** : après plusieurs départs, on ne
+fouille plus une planète mais la somme de toutes celles qu'on a traversées.
+
+**Leçon de conception (v2.1).** La première version était un reset sec : tout
+perdre, gagner un fragment. Verdict d'un joueur, sans détour : *« ce n'est pas
+difficile, c'est juste chiant. »* Il avait raison, et la règle qui en sort vaut
+pour toute couche de prestige :
+
+> Une nouvelle couche doit rendre **beaucoup plus** qu'elle ne prend, et
+> **ouvrir quelque chose** — sinon elle n'est qu'une punition déguisée en
+> contenu. Refaire à l'identique n'est pas du contenu.
+
+D'où les trois correctifs : trois fois plus de fragments dès le premier départ,
+30 % des éclats conservés pour que la production ne s'effondre pas, et
+l'héritage des natures — la mécanique qui n'existait pas et qui donne un sens
+au voyage.
 
 </details>
 

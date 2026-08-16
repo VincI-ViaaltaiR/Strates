@@ -455,10 +455,14 @@ UI.buildDoctrines = function () {
     if (d.mastery) {
       const pips = [0, 1, 2].map((i) =>
         `<span class="pip${i < Math.min(runs, MASTERY_RUNS) ? ' on' : ''}"></span>`).join('');
+      /* « Maîtrise à 3 fouilles » laissait croire qu'il fallait 3 comblements
+         AVANT de pouvoir engager la doctrine. On dit désormais ce qu'il faut
+         faire, et où on en est. */
       masteryHtml = done
-        ? `<div class="dc-mastery got">✓ ${d.mastery.name} — ${d.mastery.desc}</div>`
-        : `<div class="dc-mastery">${pips} Maîtrise à ${MASTERY_RUNS} fouilles :
-             <em>${d.mastery.name}</em> — ${d.mastery.desc}</div>`;
+        ? `<div class="dc-mastery got">✓ Maîtrise acquise — <em>${d.mastery.name}</em> : ${d.mastery.desc}</div>`
+        : `<div class="dc-mastery">${pips}
+             <b>${runs} / ${MASTERY_RUNS}</b> fouille(s) menée(s) jusqu'au comblement sous cette
+             doctrine. À ${MASTERY_RUNS}, vous gagnez <em>${d.mastery.name}</em> — ${d.mastery.desc}</div>`;
     }
 
     const card = el('div', 'doctrine' + (chosen ? ' chosen' : '') + (active ? ' active' : ''));
@@ -510,6 +514,7 @@ UI.buildChallenges = function () {
         ${armed && !active ? '<span class="dc-tag next">armé</span>' : ''}
         <span class="chal-depth">${ch.depth} m</span>
       </div>
+      <div class="chal-flavor">« ${ch.flavor} »</div>
       <div class="chal-rule">${ch.rule}</div>
       <div class="chal-reward">${done ? '✓ ' : ''}${ch.reward}</div>`;
     if (!done) card.onclick = () => {
@@ -557,9 +562,18 @@ UI.refreshUnits = function () {
   $('unit-frag').textContent = fmtInt(S.fragments);
   $('unit-left').textContent = fmtInt(S.unitsLeft);
   const tr = S.unitTrait && BY_ID.trait[S.unitTrait];
-  $('unit-trait').innerHTML = tr
-    ? `<b>${tr.name}</b> — ${tr.desc}`
-    : `<i>Unité d'origine : aucun trait particulier.</i>`;
+  /* On affiche la nature COURANTE puis l'héritage cumulé : sans cette liste,
+     le joueur ne voit pas ce que ses départs successifs lui ont construit. */
+  const inh = Object.entries(S.traitsInherited || {})
+    .filter(([, n]) => n > 0)
+    .map(([id, n]) => `${BY_ID.trait[id].name}${n > 1 ? ' ×' + n : ''}`);
+  $('unit-trait').innerHTML =
+    (tr ? `<b>${tr.name}</b> — ${tr.desc}` : `<i>Unité d'origine : aucune nature particulière.</i>`)
+    + (inh.length
+        ? `<div class="unit-inherit"><b>Héritage</b> (${Math.round(UNIT_INHERIT * 100)} % de chaque
+             nature traversée, définitivement) : ${inh.join(' · ')}</div>`
+        : `<div class="unit-inherit">Chaque graine quittée vous lègue
+             <b>${Math.round(UNIT_INHERIT * 100)} % de sa nature</b>, définitivement et cumulativement.</div>`);
   const btn = $('btn-leave');
   btn.disabled = !can;
   btn.textContent = can ? `Partir vers une autre unité — +${gain} ✧` : `Touchez le Cœur (${HEART_DEPTH} m) pour pouvoir partir`;
@@ -763,9 +777,19 @@ UI.floatGain = function (x, y, txt) {
    ========================================================================= */
 UI.render = function () {
   if (UI.shopDirty) {
+    /* On mémorise la position de défilement AVANT de reconstruire les listes.
+       Sans cela, acheter le douzième outil — qui exige de descendre dans la
+       page — remettait la liste en haut à chaque clic : le multi-achat était
+       proprement inutilisable. Reconstruire le DOM remet toujours le scroll
+       à zéro ; c'est à l'appelant de le rendre. */
+    const pane = document.querySelector('.tabpane:not(.hidden)');
+    const keepScroll = pane ? pane.scrollTop : 0;
+
     UI.buildTools(); UI.buildUpgrades(); UI.buildResearch(); UI.buildMeta();
     UI.buildDoctrines(); UI.buildChallenges(); UI.buildUnits();
     UI.shopDirty = false;
+
+    if (pane) pane.scrollTop = keepScroll;
   }
   /* Le puits ne se reconstruit que si sa STRUCTURE change (nouvelle strate
      révélée, ou strate courante différente). La descente d'un mètre, elle,

@@ -246,6 +246,17 @@ const Game = {
         });
     });
 
+    /* Achats groupés — confort indispensable en partie avancée, où l'on peut
+       avoir vingt améliorations abordables d'un coup. */
+    $('buy-all-up').addEventListener('click', () => {
+      const n = Engine.buyAllUpgrades();
+      toast(n ? `${n} amélioration(s) achetée(s).` : 'Rien d\'abordable pour l\'instant.');
+    });
+    $('buy-all-res').addEventListener('click', () => {
+      const n = Engine.buyAllResearch();
+      toast(n ? `${n} recherche(s) menée(s).` : 'Rien d\'abordable pour l\'instant.');
+    });
+
     /* Aide contextuelle */
     $('hint-ok').addEventListener('click', () => {
       $('modal-hint').classList.add('hidden');

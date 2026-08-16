@@ -74,6 +74,7 @@ function newGame() {
     fragments: 0,         // monnaie de la couche « unités »
     fragmentsTotal: 0,
     fragmentsBought: {},  // { f_semence: true, … }
+    traitsInherited: {},  // { t_tendre: 2, … } natures acquises des unités quittées
 
     /* --- Son --- */
     sound: true,
@@ -148,7 +149,8 @@ function loadGame() {
     S = Object.assign(newGame(), data);
     // Les sous-objets doivent aussi être garantis non-nuls.
     ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
-     'doctrineRuns','mastered','hintsSeen','challengesDone','fragmentsBought'].forEach((k) => {
+     'doctrineRuns','mastered','hintsSeen','challengesDone','fragmentsBought',
+     'traitsInherited'].forEach((k) => {
       if (!S[k] || typeof S[k] !== 'object') S[k] = {};
     });
     if (!Array.isArray(S.log)) S.log = [];

@@ -201,6 +201,20 @@ const Engine = {
       if (d) applyFx(d.fx);
     }
     if (S.unitTrait && BY_ID.trait[S.unitTrait]) applyFx(BY_ID.trait[S.unitTrait].fx);
+
+    /* HÉRITAGE DES GRAINES — le pan de jeu qui donne un sens au voyage.
+       Chaque unité quittée laisse 30 % de sa nature, et ces natures se
+       CUMULENT : après plusieurs départs, on ne joue plus une planète mais la
+       somme de toutes celles qu'on a traversées. C'est ce qui transforme le
+       départ d'une perte sèche en une construction. */
+    for (const id in S.traitsInherited || {}) {
+      const t = BY_ID.trait[id];
+      if (!t) continue;
+      const times = S.traitsInherited[id] | 0;
+      for (let i = 0; i < times; i++) {
+        this.partialFx(t.fx, UNIT_INHERIT, c, (v) => { artChanceMult *= v; });
+      }
+    }
     for (const id in S.fragmentsBought) {
       const f = BY_ID.fragment[id];
       if (f && f.fx) applyFx(f.fx);
@@ -318,6 +332,38 @@ const Engine = {
     return true;
   },
 
+  /**
+   * Achète toutes les améliorations abordables, de la moins chère à la plus
+   * chère. L'ordre compte : commencer par les moins chères en fait entrer le
+   * maximum, et certaines augmentent la production, ce qui n'aide pas ici mais
+   * évite au joueur trente clics en fin de partie.
+   */
+  buyAllUpgrades() {
+    const list = UPGRADES.concat(GLOBAL_UPGRADES)
+      .filter((u) => !S.upgrades[u.id])
+      .filter((u) => (u.tool ? (S.tools[u.tool] || 0) >= u.need : S.bestDepth >= u.needDepth))
+      .sort((a, b) => a.cost - b.cost);
+    let n = 0;
+    for (const u of list) if (this.buyUpgrade(u.id)) n++;
+    return n;
+  },
+
+  /** Idem pour les recherches disponibles, les moins chères d'abord. */
+  buyAllResearch() {
+    let n = 0, guard = 200;
+    /* Boucle : acheter une recherche peut en ouvrir une autre (prérequis) ou
+       ajouter un niveau à une répétable. On repasse tant que ça avance. */
+    while (guard-- > 0) {
+      const list = RESEARCH
+        .filter((r) => this.researchAvailable(r))
+        .sort((a, b) => this.researchCost(a) - this.researchCost(b));
+      const before = n;
+      for (const r of list) if (this.buyResearch(r.id)) { n++; break; }
+      if (n === before) break;
+    }
+    return n;
+  },
+
   metaAvailable(m) {
     if (S.meta[m.id]) return false;
     return m.req.every((q) => S.meta[q]);
@@ -363,9 +409,16 @@ const Engine = {
       const ch = BY_ID.challenge[S.challenge];
       if (ch && S.depth >= ch.depth) {
         S.challengesDone[S.challenge] = true;
+        /* La contrainte se lève À L'INSTANT de la validation. La laisser courir
+           jusqu'au prochain comblement transformait une réussite en punition :
+           on avait gagné, et on subissait encore. */
+        S.challenge = null;
+        S.nextChallenge = null;
         Sfx.play('success');
-        logMsg('defi', `<b>Défi relevé : ${ch.name}</b> — ${ch.reward}`);
+        logMsg('defi', `<b>Défi relevé : ${ch.name}</b> — ${ch.reward} ` +
+          `<i>La contrainte est levée sur-le-champ.</i>`);
         this.computeStats();
+        UI.shopDirty = true;
       }
     }
 
@@ -768,10 +821,30 @@ const Engine = {
      LES UNITÉS — seconde couche de prestige, ouverte par le Cœur.
      ----------------------------------------------------------------------- */
 
-  /** Fragments que le départ rapporterait. Croît avec la profondeur record. */
+  /**
+   * Fragments que le départ rapporterait.
+   *
+   * CALIBRAGE CORRIGÉ : la première version donnait 1 fragment pour tout un
+   * parcours jusqu'au Cœur, alors que le départ efface éclats et mémoire. Un
+   * joueur a résumé le résultat sans détour : « ce n'est pas difficile, c'est
+   * juste chiant ». Une couche de prestige doit rendre BEAUCOUP plus qu'elle
+   * ne prend, sinon elle n'est qu'une punition déguisée en contenu.
+   * Trois fragments dès le premier départ ouvrent immédiatement deux nœuds.
+   */
   fragmentsFor(depth) {
     if (depth < HEART_DEPTH) return 0;
-    return Math.max(1, Math.floor(1 + (depth - HEART_DEPTH) / 120));
+    return 3 + Math.floor((depth - HEART_DEPTH) / 60);
+  },
+
+  /** Applique une FRACTION d'un bloc d'effets (héritage des traits d'unité). */
+  partialFx(fx, rate, c, addChance) {
+    const soften = (v) => 1 + rate * (v - 1);
+    if (fx.prodMult)           c.prodMult *= soften(fx.prodMult);
+    if (fx.toolCostMult)       c.toolCostMult *= soften(fx.toolCostMult);
+    if (fx.digCostMult)        c.digCostMult *= soften(fx.digCostMult);
+    if (fx.knowledgeMult)      c.knowledgeMult *= soften(fx.knowledgeMult);
+    if (fx.shardMult)          c.shardMult *= soften(fx.shardMult);
+    if (fx.artefactChanceMult) addChance(soften(fx.artefactChanceMult));
   },
 
   canLeaveUnit() {
@@ -790,17 +863,26 @@ const Engine = {
     S.fragments += gain;
     S.fragmentsTotal += gain;
     S.unitsLeft += 1;
+
+    /* La nature de la graine qu'on abandonne entre dans l'héritage. */
+    if (S.unitTrait) {
+      S.traitsInherited = S.traitsInherited || {};
+      S.traitsInherited[S.unitTrait] = (S.traitsInherited[S.unitTrait] | 0) + 1;
+    }
+
     /* Les unités sont numérotées 3 → 9 puis reviennent à 1 : neuf en tout. */
     S.unit = (S.unit % 9) + 1;
     S.unitTrait = pick(UNIT_TRAITS).id;
 
-    const keep = {};
-    if (S.fragmentsBought.f_pollen) keep.shards = 25;
+    /* On ne repart PAS de rien : 30 % des éclats gagnés à vie restent acquis,
+       donc le bonus passif ne s'effondre pas d'un coup. Repartir doit coûter,
+       pas humilier. */
+    const keptShards = Math.floor(S.shardsTotal * 0.3)
+      + (S.fragmentsBought.f_pollen ? 25 : 0);
 
-    /* Remise à zéro complète de la couche « mémoire ». */
     Object.assign(S, newRun({}));
-    S.shards = keep.shards || 0;
-    S.shardsTotal = keep.shards || 0;
+    S.shards = keptShards;
+    S.shardsTotal = keptShards;
     S.prestiges = 0;
     S.meta = {};
     S.doctrine = 'aucune';
@@ -812,8 +894,10 @@ const Engine = {
     this.computeStats();
     Sfx.play('unit');
     const tr = BY_ID.trait[S.unitTrait];
-    logMsg('unit', `<b>UNITÉ ${S.unit} / 9</b> — +${gain} fragment(s). ` +
-      `Cette graine-ci : <b>${tr.name}</b>. ${tr.desc}`, 0);
+    const inherited = Object.values(S.traitsInherited || {}).reduce((a, b) => a + b, 0);
+    logMsg('unit', `<b>UNITÉ ${S.unit} / 9</b> — +${gain} fragment(s), ` +
+      `${fmtInt(keptShards)} éclat(s) conservé(s). Cette graine-ci : <b>${tr.name}</b>. ${tr.desc}` +
+      (inherited ? `<br><i>Héritage : ${inherited} nature(s) acquise(s) des graines précédentes.</i>` : ''), 0);
     UI.shopDirty = UI.wellDirty = UI.collectionDirty = UI.statsDirty = true;
     return gain;
   },
