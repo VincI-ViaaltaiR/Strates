@@ -38,6 +38,12 @@ function newRun(keep = {}) {
 /* État persistant complet : run en cours + tout ce qui traverse les runs. */
 function newGame() {
   return Object.assign(newRun(), {
+    /* --- Doctrines de chantier --- */
+    doctrine: 'aucune',     // doctrine de la fouille EN COURS
+    nextDoctrine: 'aucune', // celle qui prendra effet au prochain comblement
+    doctrineRuns: {},       // { ingenierie: 2, … } fouilles menées sous chacune
+    mastered: {},           // { ingenierie: true, … } maîtrises acquises
+
     /* --- PERSISTANT : survit au comblement --- */
     artefacts: {},        // { tesson: 3, silex: 1, ... }  (nb d'exemplaires trouvés)
     meta: {},             // { fondations: true, ... }
@@ -111,7 +117,8 @@ function loadGame() {
     // les vieilles sauvegardes n'ont pas ce champ → newGame() fournit le défaut.
     S = Object.assign(newGame(), data);
     // Les sous-objets doivent aussi être garantis non-nuls.
-    ['tools','upgrades','research','artefacts','meta','achievements','seenStrata'].forEach((k) => {
+    ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
+     'doctrineRuns','mastered'].forEach((k) => {
       if (!S[k] || typeof S[k] !== 'object') S[k] = {};
     });
     if (!Array.isArray(S.log)) S.log = [];

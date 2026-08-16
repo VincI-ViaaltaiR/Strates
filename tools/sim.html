@@ -107,22 +107,144 @@ const fmtT = (s) => s == null ? '  — jamais' :
   s < 3600 ? Math.floor(s / 60) + ' min ' + Math.round(s % 60) + ' s' :
   (s / 3600).toFixed(2) + ' h';
 
+/* =========================================================================
+   STATISTIQUES SUR PLUSIEURS PARTIES
+
+   POURQUOI : une partie contient beaucoup de hasard (tirage des artefacts,
+   des événements, des paris). Sur une seule simulation, la profondeur
+   atteinte en 8 h variait de 235 à 293 m — soit un écart AUSSI GRAND que
+   les effets qu'on cherche à mesurer. Régler l'équilibrage sur un run unique
+   revient à confondre le bruit avec le signal.
+
+   On lance donc N parties et on lit la MÉDIANE (moins sensible à une partie
+   extrême que la moyenne), avec l'étendue min–max pour juger de la dispersion.
+   ========================================================================= */
+const median = (a) => {
+  const v = a.filter((x) => x != null).sort((x, y) => x - y);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+/** Ligne « médiane [min – max] », avec le nombre de parties ayant atteint le jalon. */
+function statLine(values, total, fmtOne) {
+  const ok = values.filter((x) => x != null);
+  if (!ok.length) return '  — jamais';
+  const med = fmtOne(median(ok));
+  const lo = fmtOne(Math.min(...ok)), hi = fmtOne(Math.max(...ok));
+  const reach = ok.length < total ? `  (${ok.length}/${total} parties)` : '';
+  return `${med.padStart(11)}   [${lo} – ${hi}]${reach}`;
+}
+
+/** Joue `n` parties complètes et renvoie les relevés de chacune. */
+function runSeries(n, hours, marks, withPrestige, doctrine) {
+  const runs = [];
+  for (let i = 0; i < n; i++) {
+    S = newGame();
+    if (doctrine) S.doctrine = doctrine;
+    Engine.computeStats();
+    eventsResolved = 0;
+
+    const hit = autoplay(hours * 3600, marks);
+    const run = {
+      hit, depth: S.depth, prod: S.calc.sedPerSec, knowledge: S.knowledge,
+      events: eventsResolved, shards: Engine.shardsFor(S.maxDepth),
+      research: Object.keys(S.research).length,
+      artefacts: Object.keys(S.artefacts).length,
+      prestige: !!S.calc.prestigeUnlocked,
+    };
+
+    if (withPrestige) {
+      run.gained = Engine.doPrestige();
+      eventsResolved = 0;
+      run.hit2 = autoplay(hours * 3600, marks);
+      run.depth2 = S.depth;
+    }
+    runs.push(run);
+  }
+  return runs;
+}
+
 /* ------------------------------------------------------------------ */
 try {
   const MARKS = [10, 25, 50, 75, 100, 130, 170, 200, 230, 260, 300, 380, 470];
   const HOURS = 8;
+  /* 25 parties : la série AVEC événements est bien plus dispersée que le
+     témoin (les paris, les artefacts et les effets temporaires ajoutent du
+     hasard). Avec 12 parties, la médiane de l'écart sautait de +2 % à +22 %
+     d'une exécution à l'autre — c'est-à-dire qu'elle ne mesurait rien. */
+  const RUNS = 25;      // série principale + groupe témoin
+  const DOC_RUNS = 5;   // profil de chaque doctrine (4 doctrines × 5 parties)
 
-  S = newGame();
-  Engine.computeStats();
   const t0 = performance.now();
-  const hit = autoplay(HOURS * 3600, MARKS);
+  const runs = runSeries(RUNS, HOURS, MARKS, true);
   const ms = performance.now() - t0;
 
-  say(`Simulation : ${HOURS} h de jeu actif, calculées en ${ms.toFixed(0)} ms.\n`);
-  say('JALONS DE PROFONDEUR');
-  for (const m of MARKS) say(`   ${String(m).padStart(4)} m   ${fmtT(hit[m])}`);
+  say(`${RUNS} parties de ${HOURS} h simulées en ${(ms / 1000).toFixed(1)} s.`);
+  say(`Colonnes : médiane   [minimum – maximum sur les ${RUNS} parties]\n`);
 
-  say('\nÉTAT FINAL');
+  say('JALONS DE PROFONDEUR — 1re fouille');
+  for (const m of MARKS) {
+    say(`   ${String(m).padStart(4)} m ${statLine(runs.map((r) => r.hit[m]), RUNS, fmtT)}`);
+  }
+
+  say('\nJALONS — après un comblement');
+  for (const m of MARKS) {
+    say(`   ${String(m).padStart(4)} m ${statLine(runs.map((r) => r.hit2[m]), RUNS, fmtT)}`);
+  }
+
+  say('\nRÉSULTATS (médiane sur les ' + RUNS + ' parties)');
+  const med = (f) => median(runs.map(f));
+  say(`   profondeur 1re fouille  ${Math.round(med((r) => r.depth))} m` +
+      `   [${Math.min(...runs.map((r) => Math.floor(r.depth)))} – ${Math.max(...runs.map((r) => Math.floor(r.depth)))}]`);
+  say(`   profondeur 2e fouille   ${Math.round(med((r) => r.depth2))} m` +
+      `   [${Math.min(...runs.map((r) => Math.floor(r.depth2)))} – ${Math.max(...runs.map((r) => Math.floor(r.depth2)))}]`);
+  say(`   éclats au comblement    ${med((r) => r.gained)}`);
+  say(`   événements par partie   ${med((r) => r.events)}  (1 par ${(HOURS * 60 / Math.max(1, med((r) => r.events))).toFixed(0)} min)`);
+  say(`   recherches terminées    ${med((r) => r.research)} / ${RESEARCH.length}`);
+  say(`   artefacts découverts    ${med((r) => r.artefacts)} / ${ARTEFACTS.length}`);
+  say(`   prestige ouvert         ${runs.filter((r) => r.prestige).length}/${RUNS} parties`);
+
+  /* ---- Groupe témoin : les mêmes parties, événements désactivés ----
+     C'est la SEULE façon de mesurer l'effet réel d'un système : le comparer
+     à son absence, à méthode identique et sur le même nombre de parties.
+     Sans témoin, on compare un chiffre à un souvenir. */
+  const savedChance = BAL.eventChance;
+  BAL.eventChance = 0;
+  const ctrl = runSeries(RUNS, HOURS, MARKS, false);
+  BAL.eventChance = savedChance;
+
+  const withEv = median(runs.map((r) => r.depth));
+  const without = median(ctrl.map((r) => r.depth));
+  say('\nEFFET DES ÉVÉNEMENTS (groupe témoin, événements désactivés)');
+  say(`   sans événements   ${Math.round(without)} m   ` +
+      `[${Math.min(...ctrl.map((r) => Math.floor(r.depth)))} – ${Math.max(...ctrl.map((r) => Math.floor(r.depth)))}]`);
+  say(`   avec événements   ${Math.round(withEv)} m   ` +
+      `[${Math.min(...runs.map((r) => Math.floor(r.depth)))} – ${Math.max(...runs.map((r) => Math.floor(r.depth)))}]`);
+  const gap = (withEv / without - 1) * 100;
+  say(`   écart             ${gap >= 0 ? '+' : ''}${gap.toFixed(1)} %` +
+      `${Math.abs(gap) < 8 ? '   (dans la dispersion : effet neutre)' : '   ← À CORRIGER'}`);
+
+  /* ---- Profil de chaque doctrine ----
+     On les compare à partir de zéro, sur le même nombre de parties. On ne
+     cherche PAS à ce qu'elles donnent le même résultat : on vérifie qu'aucune
+     n'est absurde, et surtout que chacune produit une partie de FORME
+     différente — sinon le choix n'en serait pas un. */
+  say('\nPROFIL DES DOCTRINES (médiane sur ' + DOC_RUNS + ' parties de ' + HOURS + ' h, sans éclats de départ)');
+  say('                    profondeur   artefacts   recherches      éclats');
+  say('   objectif visé :               COLLECTION              PROGRESSION');
+  for (const d of DOCTRINES) {
+    const rs = runSeries(DOC_RUNS, HOURS, MARKS, false, d.id);
+    const p = Math.round(median(rs.map((r) => r.depth)));
+    const a = median(rs.map((r) => r.artefacts));
+    const re = median(rs.map((r) => r.research));
+    const sh = median(rs.map((r) => r.shards));
+    say(`   ${d.name.padEnd(16)} ${String(p).padStart(6)} m ${String(a).padStart(10)}` +
+        ` ${String(re).padStart(11)} ${String(sh).padStart(11)}`);
+  }
+  say('   → chaque doctrine doit dominer UNE colonne, pas toutes.');
+
+  say('\nDERNIÈRE PARTIE — détail');
   say(`   profondeur       ${Math.floor(S.depth)} m   (record ${Math.floor(S.bestDepth)} m)`);
   say(`   production       ${sci(S.calc.sedPerSec)} σ/s`);
   say(`   multiplicateur   ×${sci(S.calc.prodMult)}`);
@@ -133,8 +255,6 @@ try {
   say(`   améliorations    ${Object.keys(S.upgrades).length} / ${UPGRADES.length + GLOBAL_UPGRADES.length}`);
   say(`   succès           ${Object.keys(S.achievements).length} / ${ACHIEVEMENTS.length}`);
   say(`   outils           ${TOOLS.map((t) => (S.tools[t.id] || 0)).join(' · ')}`);
-  say(`   événements       ${eventsResolved} résolus (1 par ${(HOURS * 3600 / Math.max(1, eventsResolved) / 60).toFixed(1)} min)`);
-  say(`   prestige ouvert  ${S.calc.prestigeUnlocked ? 'OUI' : 'NON'}`);
   say(`   éclats si reset  ${Engine.shardsFor(S.maxDepth)}`);
 
   say('\nCOURBE DU PUITS (coût brut, hors réductions)');
@@ -142,14 +262,6 @@ try {
     const st = Engine.strataAt(d);
     say(`   ${String(d).padStart(4)} m  ${st.name.padEnd(23)} ${sci(BAL.digBase * Math.pow(1 + BAL.digGrowth, d) * st.hardness).padStart(10)} σ`);
   }
-
-  /* ---- Deuxième vie : après un comblement, à quelle vitesse rattrape-t-on ? ---- */
-  say('\nAPRÈS COMBLEMENT (mêmes 8 h, avec les éclats gagnés)');
-  const gained = Engine.doPrestige();
-  const hit2 = autoplay(HOURS * 3600, MARKS);
-  say(`   éclats encaissés ${gained}  →  bonus permanent +${Math.round(BAL.shardBonus * S.shardsTotal * 100)} %`);
-  for (const m of MARKS) say(`   ${String(m).padStart(4)} m   ${fmtT(hit2[m])}`);
-  say(`   profondeur       ${Math.floor(S.depth)} m`);
 
   /* ---- Contrôles de cohérence ---- */
   say('\nCONTRÔLES');
@@ -171,7 +283,8 @@ try {
     ['événements : strates existantes', EVENTS.every(e => !e.strata || e.strata.every(s => BY_ID.strata[s]))],
     ['événements : choix risqué → fail', EVENTS.every(e => e.choices.every(c => c.risk === undefined || c.fail))],
     ['buffs purgés', S.buffs.every(b => b.until > S.playTime)],
-    ['événements déclenchés', eventsResolved > 20],
+    ['événements déclenchés', runs.every(r => r.events > 10)],
+    ['prestige atteignable partout', runs.every(r => r.prestige)],
     ['achat groupé cohérent', (() => { S.buyMode = 10; const a = Engine.toolCostBulk('pelle', 10); const b = Engine.toolCost('pelle', 0) + Engine.toolCost('pelle', 1); return a > b; })()],
     ['export/import',         (() => { const c = exportSave(); return typeof c === 'string' && c.length > 20; })()],
   ];

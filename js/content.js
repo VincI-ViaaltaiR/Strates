@@ -23,7 +23,7 @@
    version ? ». À incrémenter en même temps que le `?v=` des balises
    <script>/<link> de index.html, qui force le navigateur à recharger les
    fichiers au lieu de resservir ceux qu'il a en cache. */
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
@@ -315,6 +315,92 @@ const ARTEFACTS = [
 ];
 
 /* -------------------------------------------------------------------------
+   DOCTRINES DE CHANTIER — choisies à chaque comblement, pour la fouille
+   suivante. Débloquées au premier comblement.
+
+   POURQUOI ELLES EXISTENT : jusqu'ici, aucune décision du joueur n'était
+   durable. Tout achat était cumulatif et optimal, toute recherche bonne à
+   prendre ; le seul arbitrage réel était « investir ou descendre ». Un jeu
+   sans renoncement n'a pas de personnalité — c'est ce qui manquait.
+
+   Une doctrine est un ENGAGEMENT pour toute une fouille : elle donne beaucoup
+   dans un domaine et retire dans un autre. Aucune n'est meilleure ; elles
+   produisent des parties de formes différentes, et comme la collection
+   d'artefacts survit aux comblements, la doctrine Archéologie garde un intérêt
+   durable même si elle descend moins bas.
+
+   La MAÎTRISE (3 fouilles menées sous une même doctrine) accorde un bonus
+   permanent conservé quelle que soit la doctrine suivante : de quoi
+   récompenser celui qui les essaie toutes plutôt que de camper sur une seule.
+
+   ÉQUILIBRAGE — la leçon que le banc d'essai a imposée :
+
+   Une première version donnait à chaque doctrine un gros bonus de production,
+   d'artefacts ou de descente. Résultat mesuré : Archéologie gagnait sur TOUS
+   les tableaux à la fois (310 m contre 261 m pour Ingénierie, avec en prime
+   plus d'artefacts et toutes les recherches). Le choix n'en était pas un.
+
+   La cause tient à la structure du jeu : le coût du mètre est exponentiel,
+   donc multiplier la production par 2,5 ne rapporte qu'une douzaine de mètres
+   (log 2,5 / log 1,075). Le savoir, lui, achète des recherches qui réduisent
+   ce coût — un effet bien plus fort. En clair :
+
+       production  ≪  savoir  ≪  coût de descente
+
+   Une doctrine ne peut donc pas se contenter de « donner plus » : chacune vise
+   un OBJECTIF DIFFÉRENT, et ces objectifs ne s'échangent pas entre eux.
+
+       Ingénierie   → les ÉCLATS      (progression méta, d'une fouille à l'autre)
+       Archéologie  → le SAVOIR       (arbre de recherche complet, artefacts au mètre)
+       Spéléologie  → la PROFONDEUR   (les strates lointaines et leur récit)
+
+   INTERDIT : toucher à `digGrowth` dans une doctrine. Réduire la croissance du
+   coût au mètre est de très loin l'effet le plus puissant du jeu — testé à
+   −1,2 pt, la Spéléologie atteignait 453 m et raflait DU MÊME COUP le plus
+   d'artefacts, de recherches ET d'éclats. C'est structurel : la profondeur est
+   l'axe dont tout le reste découle, donc l'améliorer, c'est tout améliorer.
+   Une doctrine doit se limiter à `digCostMult`, dont l'effet est un décalage
+   constant et non une pente.
+   ------------------------------------------------------------------------- */
+const DOCTRINES = [
+  {
+    id: 'aucune', name: 'Aucune doctrine', color: '#6b6156',
+    motto: "On creuse comme on a toujours creusé.",
+    desc: "Le chantier fonctionne normalement. Aucun avantage, aucune contrainte.",
+    fx: {},
+    mastery: null,
+  },
+  {
+    id: 'ingenierie', name: 'Ingénierie', color: '#c98a3a',
+    motto: "On fore. Le reste attendra.",
+    desc: "<b>Éclats du comblement ×1,7</b> et production ×3 — mais chance d'artefact ×0,4 et savoir ×0,5. " +
+          "<i>La fouille qui fait progresser la mémoire.</i>",
+    fx: { prodMult: 3, artefactChanceMult: 0.4, knowledgeMult: 0.5, shardMult: 1.7 },
+    mastery: { name: 'Machines rodées', desc: 'Production ×1,3, définitivement.', fx: { prodMult: 1.3 } },
+  },
+  {
+    id: 'archeologie', name: 'Archéologie', color: '#9a7fc0',
+    motto: "Le puits n'est qu'un moyen.",
+    desc: "<b>Chance d'artefact ×2,6</b> et savoir ×1,8 — mais production ×0,6 et descente <b>2,2× plus chère</b>. " +
+          "<i>La fouille qui remplit la collection et l'arbre de recherche, au prix de la profondeur.</i>",
+    fx: { artefactChanceMult: 2.6, knowledgeMult: 1.8, prodMult: 0.6, digCostMult: 2.2 },
+    mastery: { name: 'Œil exercé', desc: "Chance d'artefact ×1,3, définitivement.", fx: { artefactChanceMult: 1.3 } },
+  },
+  {
+    id: 'speleologie', name: 'Spéléologie', color: '#4d9a8a',
+    motto: "Descendre. Toujours descendre.",
+    desc: "<b>Coût de descente ×0,15</b> — mais les outils coûtent 30 % plus cher, " +
+          "savoir ×0,85 et chance d'artefact ×0,7. " +
+          "<i>La fouille qui atteint les strates lointaines et leur récit.</i>",
+    fx: { digCostMult: 0.15, toolCostMult: 1.3, knowledgeMult: 0.85, artefactChanceMult: 0.7 },
+    mastery: { name: 'Puits taillé', desc: 'Coût de descente ×0,88, définitivement.', fx: { digCostMult: 0.88 } },
+  },
+];
+
+/** Nombre de fouilles sous une même doctrine avant d'en obtenir la maîtrise. */
+const MASTERY_RUNS = 3;
+
+/* -------------------------------------------------------------------------
    MÉTA — achetée avec des Éclats de mémoire. SURVIT AU COMBLEMENT.
    ------------------------------------------------------------------------- */
 const META = [
@@ -349,9 +435,24 @@ const META = [
    passe une heure sans qu'il n'arrive rien de neuf. Les événements comblent
    exactement ces creux et transforment le décor en décisions.
 
-   RÈGLE DE CONCEPTION : aucun choix ne doit être évidemment meilleur. On
-   échange toujours une chose contre une autre — du sédiment contre du temps,
-   de la sécurité contre du savoir, de la prudence contre de la vitesse.
+   TROIS RÈGLES DE CONCEPTION :
+
+   1. Aucun choix ne doit être évidemment meilleur. On échange toujours une
+      chose contre une autre — du sédiment contre du temps, de la sécurité
+      contre du savoir, de la prudence contre de la vitesse.
+
+   2. CHAQUE OPTION DOIT COÛTER QUELQUE CHOSE. La première version offrait
+      surtout des bonus avec un choix de couleur : le groupe témoin du banc
+      d'essai a mesuré +13 % de profondeur en 8 h, alors que les événements
+      doivent rythmer le jeu, pas l'accélérer.
+
+   3. UNE PÉNALITÉ SE PAIE SUR LE DÉBIT, PAS SUR LE STOCK. Retirer du sédiment
+      ne coûte presque rien à qui réinvestit tout en permanence : la réserve
+      est déjà proche de zéro et le plancher `max(0, …)` absorbe le reste.
+      Vérifié au banc d'essai — ajouter des coûts en sédiment n'a strictement
+      rien changé. Les coûts passent donc par un effet temporaire « Chantier
+      ralenti » (production ×0,5), qu'aucune stratégie ne permet d'esquiver.
+      Conversion : perdre X secondes de production = ralenti pendant 2X s.
 
    Vocabulaire des effets (`fx`), appliqué par Engine.resolveEvent() :
      sedimentFrac  fraction de la réserve actuelle gagnée/perdue (−0.4 = −40 %)
@@ -370,7 +471,7 @@ const EVENTS = [
     text: "Le trépan s'enfonce d'un coup : une poche de sédiment déjà fragmenté, sur plusieurs mètres.",
     choices: [
       { label: "Tout extraire", hint: "On charge et on remonte.",
-        fx: { sedimentSec: 150 } },
+        fx: { sedimentSec: 120 } },
       { label: "Consolider les parois avec", hint: "Le puits se tient mieux un moment.",
         fx: { buff: { name: 'Parois consolidées', dur: 180, digCostMult: 0.8 } } },
     ],
@@ -383,7 +484,7 @@ const EVENTS = [
       { label: "Forcer", hint: "Souvent sans conséquence. Parfois coûteux.",
         risk: 0.6, fx: {}, fail: { sedimentFrac: -0.3 } },
       { label: "Démonter et dégager à la main", hint: "Sûr, mais on perd du temps.",
-        fx: { sedimentSec: -100 } },
+        fx: { buff: { name: 'Chantier ralenti', dur: 200, prodMult: 0.35 } } },
     ],
   },
   {
@@ -391,10 +492,13 @@ const EVENTS = [
     title: "L'équipe demande une pause",
     text: "Trois jours qu'ils descendent sans remonter. Le chef de poste vous regarde sans rien dire.",
     choices: [
-      { label: "Accorder la pause", hint: "On perd un peu, puis on produit bien plus.",
-        fx: { sedimentSec: -80, buff: { name: 'Équipe reposée', dur: 300, prodMult: 1.5 } } },
+      { label: "Accorder la pause", hint: "Le chantier s'arrête, puis repart mieux.",
+        fx: { buffs: [
+          { name: 'Chantier ralenti', dur: 160, prodMult: 0.35 },
+          { name: 'Équipe reposée', dur: 300, prodMult: 1.4 },
+        ] } },
       { label: "Refuser, on continue", hint: "Rien ne s'arrête. Le moral, si.",
-        fx: { buff: { name: 'Moral entamé', dur: 180, prodMult: 0.85 } } },
+        fx: { buff: { name: 'Moral entamé', dur: 300, prodMult: 0.8 } } },
     ],
   },
 
@@ -405,7 +509,7 @@ const EVENTS = [
     text: "Une couche entière de coquilles empilées, intactes. Un paléontologue pleurerait. Vous avez un puits à creuser.",
     choices: [
       { label: "Fouiller méthodiquement", hint: "Le chantier s'arrête pendant ce temps.",
-        fx: { artefact: true, sedimentSec: -120 } },
+        fx: { artefact: true, buff: { name: 'Chantier ralenti', dur: 240, prodMult: 0.35 } } },
       { label: "Traverser", hint: "On broie tout et on avance.",
         fx: { sedimentSec: 120 } },
     ],
@@ -428,8 +532,8 @@ const EVENTS = [
     title: "Poche d'air scellée",
     text: "De l'air enfermé là depuis douze mille ans vient de se mélanger au vôtre. Il sent la pierre chaude.",
     choices: [
-      { label: "Prélever et analyser", hint: "Le laboratoire va aimer.",
-        fx: { knowledgeMul: 5 } },
+      { label: "Prélever et analyser", hint: "Le forage s'arrête le temps du prélèvement.",
+        fx: { knowledgeMul: 5, buff: { name: 'Chantier ralenti', dur: 160, prodMult: 0.35 } } },
       { label: "Profiter du vide pour avancer", hint: "On gagne du terrain sans creuser.",
         fx: { depth: 1 } },
     ],
@@ -439,8 +543,8 @@ const EVENTS = [
     title: "L'eau est tiède, et sucrée",
     text: "Trente-huit degrés à quatre-vingt-dix mètres, sans source de chaleur connue. Un ouvrier en a bu avant qu'on l'arrête.",
     choices: [
-      { label: "L'envoyer au laboratoire", hint: "La voie prudente.",
-        fx: { knowledgeMul: 6 } },
+      { label: "L'envoyer au laboratoire", hint: "La voie prudente, et la plus lente.",
+        fx: { knowledgeMul: 6, buff: { name: 'Chantier ralenti', dur: 160, prodMult: 0.35 } } },
       { label: "En distribuer à l'équipe", hint: "Personne ne sait ce qu'il y a dedans.",
         risk: 0.5,
         fx: { buff: { name: 'Vigueur inexpliquée', dur: 300, prodMult: 2.2 } },
@@ -456,8 +560,8 @@ const EVENTS = [
     choices: [
       { label: "Accorder le forage sur la note", hint: "La roche s'ouvre d'elle-même.",
         fx: { buff: { name: 'Forage accordé', dur: 240, digCostMult: 0.75 } } },
-      { label: "Tout arrêter et enregistrer", hint: "Du savoir. Et un doute.",
-        fx: { knowledgeMul: 4 } },
+      { label: "Tout arrêter et enregistrer", hint: "On coupe les machines pour écouter.",
+        fx: { knowledgeMul: 4, buff: { name: 'Chantier ralenti', dur: 260, prodMult: 0.35 } } },
     ],
   },
   {
@@ -466,9 +570,9 @@ const EVENTS = [
     text: "L'échantillon remonte avec une strie régulière tous les onze millimètres. Le granite ne fait pas ça.",
     choices: [
       { label: "Envoyer au laboratoire", hint: "Elle finira en vitrine.",
-        fx: { artefact: true } },
+        fx: { artefact: true, buff: { name: 'Chantier ralenti', dur: 160, prodMult: 0.35 } } },
       { label: "La garder et l'étudier seul", hint: "Personne d'autre n'a besoin de savoir.",
-        fx: { knowledgeMul: 8 } },
+        fx: { knowledgeMul: 8, buff: { name: 'Chantier ralenti', dur: 200, prodMult: 0.35 } } },
     ],
   },
   {
@@ -490,9 +594,9 @@ const EVENTS = [
     text: "Pavée. Avec des trottoirs, et une rigole centrale pour les eaux. Elle descend, elle aussi.",
     choices: [
       { label: "La suivre", hint: "On prend le temps de regarder.",
-        fx: { artefact: true, knowledgeMul: 4 } },
+        fx: { artefact: true, knowledgeMul: 4, buff: { name: 'Chantier ralenti', dur: 260, prodMult: 0.35 } } },
       { label: "Forer à travers", hint: "On ne s'attarde pas.",
-        fx: { depth: 1, sedimentSec: 90 } },
+        fx: { depth: 1 } },
     ],
   },
   {
@@ -500,8 +604,8 @@ const EVENTS = [
     title: 'Une porte',
     text: "Verrouillée de l'intérieur. Ce qui suppose que quelqu'un est resté du bon côté.",
     choices: [
-      { label: "L'ouvrir", hint: "Quelqu'un a fermé. On rouvre.",
-        fx: { knowledgeMul: 10 } },
+      { label: "L'ouvrir", hint: "Quelqu'un a fermé. On rouvre. Ça prend la journée.",
+        fx: { knowledgeMul: 10, buff: { name: 'Chantier ralenti', dur: 340, prodMult: 0.35 } } },
       { label: "La murer et continuer à descendre", hint: "L'équipe travaille mieux sans y penser.",
         fx: { buff: { name: 'On ne regarde pas derrière', dur: 240, prodMult: 1.8 } } },
     ],
@@ -526,8 +630,8 @@ const EVENTS = [
     title: "Un engrenage s'arrête",
     text: "Il tournait depuis quatre milliards d'années. Le trépan l'a effleuré. Il s'est arrêté. Il attend.",
     choices: [
-      { label: "Reculer et observer", hint: "On note tout, à distance.",
-        fx: { knowledgeMul: 6 } },
+      { label: "Reculer et observer", hint: "On note tout, à distance, sans forer.",
+        fx: { knowledgeMul: 6, buff: { name: 'Chantier ralenti', dur: 300, prodMult: 0.35 } } },
       { label: "Le remettre en mouvement", hint: "La machine se remet à travailler. Pour vous.",
         fx: { buff: { name: 'La machine aide', dur: 300, prodMult: 2.5 } } },
     ],
@@ -539,8 +643,8 @@ const EVENTS = [
     choices: [
       { label: "Accepter", hint: "On ne relit pas les termes.",
         fx: { buff: { name: 'Accord tacite', dur: 300, prodMult: 3 } } },
-      { label: "Refuser poliment", hint: "On garde ses distances, et une pièce.",
-        fx: { artefact: true, knowledgeMul: 8 } },
+      { label: "Refuser poliment", hint: "On garde ses distances. Les filaments se referment.",
+        fx: { artefact: true, knowledgeMul: 8, buff: { name: 'Chantier ralenti', dur: 340, prodMult: 0.35 } } },
     ],
   },
 ];
@@ -587,6 +691,7 @@ const BY_ID = {
   meta:     Object.fromEntries(META.map((m) => [m.id, m])),
   strata:   Object.fromEntries(STRATA.map((s) => [s.id, s])),
   event:    Object.fromEntries(EVENTS.map((e) => [e.id, e])),
+  doctrine: Object.fromEntries(DOCTRINES.map((d) => [d.id, d])),
   upgrade:  Object.fromEntries(UPGRADES.concat(GLOBAL_UPGRADES).map((u) => [u.id, u])),
 };
 

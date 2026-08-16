@@ -7,7 +7,7 @@
 <!-- Le `?v=` change à chaque version : sans lui, un navigateur qui a déjà
      visité le jeu resservirait ses anciens fichiers depuis son cache et le
      joueur resterait bloqué sur une version périmée sans le savoir. -->
-<link rel="stylesheet" href="css/style.css?v=1.1.0">
+<link rel="stylesheet" href="css/style.css?v=1.2.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
 </head>
 <body>
@@ -47,6 +47,9 @@
     <div id="well-col"></div>
 
     <div id="well-ctl">
+      <!-- Doctrine engagée pour la fouille en cours -->
+      <div id="doctrine-badge" class="hidden"></div>
+
       <!-- Effets temporaires issus des événements de forage -->
       <div id="buffs"></div>
 
@@ -126,6 +129,15 @@
       </div>
 
       <div id="meta-body" class="hidden">
+        <div id="doctrines">
+          <h4>Doctrine de la prochaine fouille</h4>
+          <p class="dc-intro">Un engagement pour toute la fouille : beaucoup dans un domaine,
+            moins dans un autre. Aucune n'est meilleure — elles donnent des parties de formes
+            différentes. Mener <b>3 fouilles</b> sous une même doctrine en acquiert la maîtrise,
+            un bonus conservé définitivement.</p>
+          <div id="doctrine-list"></div>
+        </div>
+
         <div class="prestige-box">
           <div class="pb-grid">
             <div><span id="meta-gain">0</span><small>éclats si vous comblez</small></div>
@@ -203,11 +215,11 @@
 
 <!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
      en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
-<script src="js/utils.js?v=1.1.0"></script>
-<script src="js/content.js?v=1.1.0"></script>
-<script src="js/state.js?v=1.1.0"></script>
-<script src="js/engine.js?v=1.1.0"></script>
-<script src="js/ui.js?v=1.1.0"></script>
-<script src="js/main.js?v=1.1.0"></script>
+<script src="js/utils.js?v=1.2.0"></script>
+<script src="js/content.js?v=1.2.0"></script>
+<script src="js/state.js?v=1.2.0"></script>
+<script src="js/engine.js?v=1.2.0"></script>
+<script src="js/ui.js?v=1.2.0"></script>
+<script src="js/main.js?v=1.2.0"></script>
 </body>
 </html>

@@ -408,6 +408,60 @@ UI.refreshMeta = function () {
   }
 };
 
+/* ---- 3e bis. DOCTRINES --------------------------------------------------- */
+UI.buildDoctrines = function () {
+  const box = $('doctrine-list');
+  box.innerHTML = '';
+
+  DOCTRINES.forEach((d) => {
+    const runs = S.doctrineRuns[d.id] || 0;
+    const done = !!S.mastered[d.id];
+    const chosen = S.nextDoctrine === d.id;
+    const active = S.doctrine === d.id;
+
+    /* Progression de maîtrise : trois pastilles, pleines ou vides. C'est plus
+       lisible qu'un « 2/3 » et ça donne envie de compléter la série. */
+    let masteryHtml = '';
+    if (d.mastery) {
+      const pips = [0, 1, 2].map((i) =>
+        `<span class="pip${i < Math.min(runs, MASTERY_RUNS) ? ' on' : ''}"></span>`).join('');
+      masteryHtml = done
+        ? `<div class="dc-mastery got">✓ ${d.mastery.name} — ${d.mastery.desc}</div>`
+        : `<div class="dc-mastery">${pips} Maîtrise à ${MASTERY_RUNS} fouilles :
+             <em>${d.mastery.name}</em> — ${d.mastery.desc}</div>`;
+    }
+
+    const card = el('div', 'doctrine' + (chosen ? ' chosen' : '') + (active ? ' active' : ''));
+    card.style.setProperty('--c', d.color);
+    card.innerHTML = `
+      <div class="dc-head">
+        <span class="dc-name">${d.name}</span>
+        ${active ? '<span class="dc-tag">en cours</span>' : ''}
+        ${chosen && !active ? '<span class="dc-tag next">prochaine</span>' : ''}
+      </div>
+      <div class="dc-motto">« ${d.motto} »</div>
+      <div class="dc-desc">${d.desc}</div>
+      ${masteryHtml}`;
+    card.onclick = () => {
+      S.nextDoctrine = d.id;
+      UI.shopDirty = true;
+      toast('Prochaine fouille : ' + d.name);
+    };
+    box.appendChild(card);
+  });
+};
+
+/* Badge permanent dans la colonne du puits : la doctrine conditionne toute la
+   partie, elle doit rester sous les yeux et non cachée dans un onglet. */
+UI.refreshDoctrineBadge = function () {
+  const badge = $('doctrine-badge');
+  const d = BY_ID.doctrine[S.doctrine];
+  if (!d || d.id === 'aucune') { badge.classList.add('hidden'); return; }
+  badge.classList.remove('hidden');
+  badge.style.setProperty('--c', d.color);
+  badge.innerHTML = `<span class="db-lab">doctrine</span><span class="db-name">${d.name}</span>`;
+};
+
 /* ---- 3f. SUCCÈS & STATS -------------------------------------------------- */
 UI.buildStats = function () {
   const box = $('list-ach');
@@ -572,6 +626,7 @@ UI.floatGain = function (x, y, txt) {
 UI.render = function () {
   if (UI.shopDirty) {
     UI.buildTools(); UI.buildUpgrades(); UI.buildResearch(); UI.buildMeta();
+    UI.buildDoctrines();
     UI.shopDirty = false;
   }
   /* Le puits ne se reconstruit que si sa STRUCTURE change (nouvelle strate
@@ -590,6 +645,7 @@ UI.render = function () {
 
   UI.refreshHeader();
   UI.refreshWell();
+  UI.refreshDoctrineBadge();
   UI.refreshBuffs();
   UI.refreshTools();
   UI.refreshUpgrades();

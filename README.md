@@ -58,10 +58,73 @@ Ils existent pour deux raisons précises :
 - **rendre le monde interrogatif.** Sans eux, le jeu ne demande jamais rien au
   joueur : le carnet raconte, les artefacts intriguent, mais tout se subit.
 
-Ils sont calibrés pour **rythmer sans accélérer** : au banc d'essai, la
-profondeur atteinte en 8 h est la même avec et sans eux. Certains ouvrent des
-**effets temporaires** (production, coût de descente), affichés en haut de la
-colonne du puits avec leur temps restant.
+La fenêtre affiche les conséquences **chiffrées sur l'état du moment** :
+« +19,0 G σ (2 min 30 de production) » contre « prochain mètre 293 M → 234 M σ
+pendant 3 min ». Sans ces valeurs, les deux options ne sont pas dans la même
+unité et le choix revient à tirer à pile ou face — un dilemme n'a d'intérêt que
+si le joueur peut l'évaluer. Les paris montrent leurs deux issues avec leurs
+probabilités.
+
+Certains choix ouvrent des **effets temporaires** (production, coût de descente)
+affichés en haut de la colonne du puits avec leur décompte.
+
+Ils devraient **rythmer sans accélérer**. Le groupe témoin du banc d'essai
+mesure aujourd'hui **+11 % de profondeur en 8 h** (25 parties) : ce n'est pas
+neutre, et c'est un réglage à reprendre. La mesure a longtemps sauté de +2 % à
++22 % d'une exécution à l'autre, parce que 12 parties ne suffisaient pas — la
+série avec événements est bien plus dispersée que le témoin. À 25 parties, le
+chiffre se stabilise et le verdict est clair.
+
+**Deux leçons d'équilibrage, apprises par la mesure :**
+
+- *Un événement ne doit pas être une récompense avec un choix de couleur.* La
+  première version offrait un bonus dans les deux branches : +13 % de vitesse.
+- *Une pénalité se paie sur le débit, pas sur le stock.* Retirer du sédiment ne
+  coûte presque rien à qui réinvestit tout — la réserve est déjà proche de zéro
+  et le plancher `max(0, …)` absorbe le reste. Ajouter des coûts en sédiment n'a
+  strictement rien changé à la mesure. Les coûts passent donc par un effet
+  « Chantier ralenti » (production ×0,5), qu'aucune stratégie n'esquive.
+
+### Les doctrines de chantier
+
+À chaque comblement, on engage une **doctrine** pour toute la fouille suivante.
+Elle donne beaucoup dans un domaine et retire dans un autre :
+
+| Doctrine | Vise | Donne | Coûte |
+|---|---|---|---|
+| **Ingénierie** | les éclats | éclats ×1,7, production ×3 | artefacts ×0,4, savoir ×0,5 |
+| **Archéologie** | le savoir | artefacts ×2,6, savoir ×1,8 | production ×0,6, descente ×2,2 |
+| **Spéléologie** | la profondeur | descente ×0,15 | outils ×1,3, savoir ×0,85, artefacts ×0,7 |
+
+Mener **3 fouilles** sous une même doctrine en acquiert la **maîtrise** : un
+bonus permanent, conservé ensuite quelle que soit la doctrine suivie. C'est ce
+qui récompense celui qui les essaie toutes plutôt que de camper sur une seule.
+
+**Pourquoi elles existent.** Jusque-là, aucune décision n'était durable : tout
+achat était cumulatif et optimal, toute recherche bonne à prendre. Un jeu sans
+renoncement n'a pas de personnalité. Une doctrine est un engagement, et donc un
+vrai choix.
+
+### Trois leçons d'équilibrage, imposées par la mesure
+
+Le profil de chaque doctrine est mesuré à chaque exécution du banc d'essai.
+Trois principes en sont sortis, et ils valent pour tout ajout futur :
+
+**1. `production ≪ savoir ≪ coût de descente`.** Le coût du mètre étant
+exponentiel, multiplier la production par 2,5 ne rapporte qu'une douzaine de
+mètres (log 2,5 / log 1,075). Le savoir, lui, achète les recherches qui
+réduisent ce coût. Un bonus de production n'est donc *jamais* comparable à un
+bonus de savoir, même à multiplicateur égal.
+
+**2. Ne jamais toucher à `digGrowth` dans une doctrine.** Réduire la croissance
+du coût au mètre est de très loin l'effet le plus puissant du jeu : testé à
+−1,2 pt, la Spéléologie atteignait 453 m et raflait *du même coup* le plus
+d'artefacts, de recherches et d'éclats. C'est structurel — la profondeur est
+l'axe dont tout le reste découle, donc l'améliorer c'est tout améliorer. Une
+doctrine se limite à `digCostMult`, qui décale la courbe sans changer sa pente.
+
+**3. Chaque doctrine doit dominer une colonne, pas toutes.** C'est le critère
+que le banc d'essai affiche ; s'il est violé, le choix n'en est plus un.
 
 ### L'arbitrage central
 
@@ -155,17 +218,30 @@ gardées en mémoire.
 
 ### Banc d'essai — `tools/sim.html`
 
-Double-cliquez dessus. Il fait jouer un joueur automatique pendant 8 h de temps
-de jeu (calculées en ~200 ms), avant et après un comblement, puis affiche :
+Double-cliquez dessus. Il fait jouer un joueur automatique sur **25 parties** de
+8 h chacune, avant et après un comblement (le tout en ~12 secondes), puis
+affiche :
 
-- les jalons de profondeur horodatés (10 m, 50 m, 100 m…) ;
-- l'état final (production, multiplicateurs, recherches, artefacts) ;
-- la courbe des coûts du puits ;
-- une série de contrôles de cohérence des données.
+- les jalons de profondeur, en **médiane [minimum – maximum]** ;
+- un **groupe témoin** rejouant les 25 mêmes parties événements désactivés,
+  pour mesurer leur effet réel ;
+- le **profil des quatre doctrines** (profondeur / artefacts / recherches /
+  éclats), pour vérifier qu'aucune ne domine toutes les colonnes ;
+- l'état détaillé de la dernière partie et la courbe des coûts du puits ;
+- une vingtaine de contrôles de cohérence des données.
 
-**Relancez-le après chaque modification de `BAL` ou de `content.js`.** C'est le
-seul moyen honnête de savoir si un changement d'équilibrage améliore ou casse
-la courbe.
+**Pourquoi 25 parties et pas une seule.** Le jeu contient beaucoup de hasard :
+sur une partie unique, la profondeur atteinte en 8 h varie de 230 à 300 m — un
+écart *aussi grand que les effets qu'on cherche à mesurer*. Régler
+l'équilibrage sur un run unique revient à confondre le bruit avec le signal,
+et c'est exactement l'erreur qui a laissé passer un système d'événements 13 %
+trop généreux. Même à 12 parties, la mesure sautait encore de +2 % à +22 %.
+
+**Pourquoi un groupe témoin.** C'est la seule façon de mesurer l'effet d'un
+système : le comparer à son absence, à méthode identique et sur le même nombre
+de parties. Sans témoin, on compare un chiffre à un souvenir.
+
+**Relancez-le après chaque modification de `BAL` ou de `content.js`.**
 
 ### Mode démo — `index.html?demo=N`
 
@@ -192,19 +268,35 @@ risque d'écraser sa progression.
 ## Contenu actuel
 
 10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches ·
-31 artefacts · 15 événements de forage · 10 nœuds de mémoire · 20 succès.
+31 artefacts · 15 événements de forage · **4 doctrines** avec leurs maîtrises ·
+10 nœuds de mémoire · 20 succès.
 
-Repères mesurés au banc d'essai (jeu actif, sans temps hors-ligne) :
+Profil mesuré des doctrines (médiane sur 5 parties de 8 h, sans éclats) :
 
-| | 1re fouille | après 1 comblement (+120 %) |
+| | profondeur | artefacts | recherches | éclats |
+|---|---|---|---|---|
+| Aucune | 246 m | 20 | 15 | 11 |
+| Ingénierie | 294 m | 18 | 14 | **25** |
+| Archéologie | 271 m | **22** | **18** | 13 |
+| Spéléologie | **294 m** | 19 | 15 | 15 |
+
+Repères mesurés au banc d'essai — **médiane sur 7 parties**, jeu actif, sans
+temps hors-ligne :
+
+| | 1re fouille | après 1 comblement |
 |---|---|---|
-| 50 m | 27 min | 6 min |
-| 100 m | 1 h 20 | 16 min |
-| 170 m — *La Cité Noyée* | 3 h 54 | 57 min |
-| 230 m — *Le Grand Silence* | 6 h 47 | 2 h 25 |
-| 380 m — *Le Réseau* | — | 7 h 15 |
+| 50 m | 26 min | 7 min |
+| 100 m | 1 h 31 | 22 min |
+| 170 m — *La Cité Noyée* | 3 h 43 | 1 h 04 |
+| 230 m — *Le Grand Silence* | 6 h 52 | 2 h 14 |
+| 380 m — *Le Réseau* | — | 5 h 53 |
+| profondeur après 8 h | 240 m | 392 m |
 
-Le Cœur (470 m) demande une troisième fouille.
+Le Cœur (470 m) demande une troisième fouille. Le comblement s'ouvre dans
+**7 parties sur 7**, vers 200 m.
+
+Ces chiffres bougent d'une exécution à l'autre : la dispersion entre parties
+est de l'ordre de ±10 %. Ne conclure à un changement d'équilibrage qu'au-delà.
 
 ---
 
@@ -260,7 +352,11 @@ précisément ce que l'URL évite.
 
 ## Pistes pour la suite
 
-- Événements aléatoires en cours de forage (poche de gaz, effondrement, chambre scellée)
+- **Reprendre le réglage des événements** — ils accélèrent de +11 %, mesuré sur
+  25 parties. À traiter en durcissant les ralentissements, puis en re-mesurant.
+- **Arbre de recherche visuel** — la liste actuelle ne montre pas les
+  dépendances ; une disposition en branches les rendrait lisibles d'un coup d'œil
+- **Défis de fouille** — rejouer avec un handicap (sans descente auto, sans
+  artefacts) pour un bonus permanent, à la manière d'Antimatter Dimensions
 - Un deuxième axe de prestige au-delà du Cœur
 - Sons et musique d'ambiance
-- Objectifs quotidiens / défis de fouille

@@ -8,6 +8,18 @@
    3) Quand un chiffre est faux, on sait dans quel fichier chercher.
    ========================================================================= */
 
+/**
+ * Un effet d'événement peut porter un effet temporaire (`buff`) ou plusieurs
+ * (`buffs`). On normalise en tableau une fois pour toutes.
+ *
+ * POURQUOI PLUSIEURS : une même décision combine souvent un avantage et son
+ * prix — « accorder la pause » repose l'équipe ET arrête le chantier pendant
+ * ce temps. Les deux doivent coexister.
+ */
+function buffList(fx) {
+  return fx.buffs || (fx.buff ? [fx.buff] : []);
+}
+
 const Engine = {
 
   /* -----------------------------------------------------------------------
@@ -101,6 +113,7 @@ const Engine = {
       digGrowth: 0,          // retranché à BAL.digGrowth
       artefactChance: BAL.artefactChance,
       knowledgeMult: 1,
+      shardMult: 1,          // multiplie les éclats gagnés au comblement
       autoDig: false,
       offline: false,
       offlineRate: 0.5,
@@ -143,6 +156,16 @@ const Engine = {
     if (S.meta.oeil)               c.prodMult *= 10;
     if (S.meta.memoire_vive)       c.autoDig = true;
     if (S.meta.echo_temporel)    { c.offline = true; c.offlineRate = 1; c.offlineCapH = 24; }
+
+    /* --- 4 bis. Doctrine de la fouille en cours, puis maîtrises acquises.
+       La doctrine ne vaut que pour la fouille courante ; les maîtrises, elles,
+       sont définitives et s'appliquent quelle que soit la doctrine suivie. */
+    const doc = BY_ID.doctrine[S.doctrine];
+    if (doc && doc.fx) applyFx(doc.fx);
+    for (const id in S.mastered) {
+      const m = BY_ID.doctrine[id];
+      if (m && m.mastery) applyFx(m.mastery.fx);
+    }
 
     /* --- 5. Éclats gagnés à vie : bonus passif additif (lisible) --- */
     c.prodMult *= 1 + BAL.shardBonus * S.shardsTotal;
@@ -187,6 +210,7 @@ const Engine = {
       if (fx.digCostMult)        c.digCostMult *= fx.digCostMult;
       if (fx.digGrowth)          c.digGrowth += fx.digGrowth;
       if (fx.knowledgeMult)      c.knowledgeMult *= fx.knowledgeMult;
+      if (fx.shardMult)          c.shardMult *= fx.shardMult;
       if (fx.artefactChanceMult) artChanceMult *= fx.artefactChanceMult;
       if (fx.flag === 'autoDig')  c.autoDig = true;
       if (fx.flag === 'offline')  c.offline = true;
@@ -351,8 +375,7 @@ const Engine = {
     if (fx.artefact) out.push(`1 artefact de <em>${st.name}</em>`);
     if (fx.depth)    out.push(`${fx.depth > 0 ? '+' : '−'}${Math.abs(fx.depth)} m de profondeur`);
 
-    if (fx.buff) {
-      const b = fx.buff;
+    for (const b of buffList(fx)) {
       if (b.prodMult) {
         /* On chiffre aussi le gain total sur la durée : « ×1,5 » ne dit rien,
            « ≈ +42 M σ sur 5 min » se compare à une somme immédiate. */
@@ -432,8 +455,8 @@ const Engine = {
       UI.wellDirty = true;
     }
 
-    if (fx.buff) {
-      const b = Object.assign({}, fx.buff, { until: S.playTime + fx.buff.dur });
+    for (const src of buffList(fx)) {
+      const b = Object.assign({}, src, { until: S.playTime + src.dur });
       /* Un même effet ne se cumule pas avec lui-même : il se renouvelle.
          Sinon deux « Forage accordé » d'affilée donneraient −70 % de coût. */
       S.buffs = S.buffs.filter((x) => x.name !== b.name);
@@ -558,9 +581,10 @@ const Engine = {
      ----------------------------------------------------------------------- */
   shardsFor(depth) {
     if (depth < BAL.shardDiv) return 0;
-    let n = Math.floor(Math.pow(depth / BAL.shardDiv, BAL.shardPow));
-    if (S.meta.memoire_vive) n = Math.floor(n * 1.5);
-    return n;
+    let n = Math.pow(depth / BAL.shardDiv, BAL.shardPow);
+    if (S.meta.memoire_vive) n *= 1.5;
+    n *= (S.calc && S.calc.shardMult) || 1;   // doctrine Ingénierie
+    return Math.floor(n);
   },
 
   doPrestige() {
@@ -570,6 +594,20 @@ const Engine = {
     S.shards += gain;
     S.shardsTotal += gain;
     S.prestiges += 1;
+
+    /* --- Doctrines : on crédite la fouille qui s'achève, puis on engage
+       celle qui vient. La maîtrise s'obtient à MASTERY_RUNS fouilles menées
+       jusqu'au bout sous la même doctrine. --- */
+    const finished = S.doctrine;
+    if (finished && finished !== 'aucune') {
+      S.doctrineRuns[finished] = (S.doctrineRuns[finished] || 0) + 1;
+      const d = BY_ID.doctrine[finished];
+      if (d && d.mastery && !S.mastered[finished] && S.doctrineRuns[finished] >= MASTERY_RUNS) {
+        S.mastered[finished] = true;
+        logMsg('doctrine', `<b>Maîtrise : ${d.name}</b> — ${d.mastery.name}. ${d.mastery.desc}`, 0);
+      }
+    }
+    const engaged = BY_ID.doctrine[S.nextDoctrine] ? S.nextDoctrine : 'aucune';
 
     /* Ce que la méta permet d'emporter dans la nouvelle fouille. */
     const keep = {};
@@ -583,9 +621,14 @@ const Engine = {
     const fresh = newRun(keep);
     Object.assign(S, fresh);
     S.seenStrata = {};          // on veut relire les textes de strate
+    S.doctrine = engaged;
+    S.nextDoctrine = engaged;   // reconduite par défaut, modifiable à tout moment
     this.computeStats();
 
-    logMsg('prestige', `Puits comblé. <b>+${fmt(gain)} éclats de mémoire</b>. Le chantier rouvre ailleurs.`, 0);
+    const dn = BY_ID.doctrine[engaged];
+    logMsg('prestige', `Puits comblé. <b>+${fmt(gain)} éclats de mémoire</b>. ` +
+      (engaged === 'aucune' ? 'Le chantier rouvre ailleurs.'
+                            : `Nouvelle fouille sous doctrine <b>${dn.name}</b> — « ${dn.motto} »`), 0);
     UI.shopDirty = UI.wellDirty = UI.collectionDirty = true;
     return gain;
   },
