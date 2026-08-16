@@ -266,7 +266,10 @@ UI.buildResearch = function () {
   UI.refs.research = {};
 
   RESEARCH.forEach((r) => {
-    const done = !!S.research[r.id];
+    const lvl = Engine.researchLevel(r.id);
+    /* Une recherche répétable n'est jamais « terminée » : elle affiche son
+       niveau courant et reste achetable indéfiniment. */
+    const done = !r.repeat && lvl > 0;
     const open = Engine.researchAvailable(r);
     /* Les recherches trop lointaines restent masquées : on ne montre que
        celles faites, ouvertes, ou dont un seul prérequis manque. */
@@ -280,16 +283,18 @@ UI.buildResearch = function () {
     const card = el('div', 'card research' + (done ? ' done' : '') + (!open && !done ? ' locked' : ''));
     const reqTxt = r.req.length
       ? `<div class="card-sub">Requiert : ${r.req.map((q) => BY_ID.research[q].name).join(', ')}</div>` : '';
+    const price = Engine.researchCost(r);
+    const lvlTag = r.repeat && lvl > 0 ? ` <span class="owned">niv. ${lvl}</span>` : '';
     card.innerHTML = `
       <div class="card-main">
-        <div class="card-title">${r.name}${done ? ' <span class="chk">✓</span>' : ''}</div>
+        <div class="card-title">${r.name}${done ? ' <span class="chk">✓</span>' : ''}${lvlTag}</div>
         <div class="card-desc">${r.desc}</div>
         ${done ? '' : reqTxt}
       </div>
-      ${done ? '' : `<div class="card-buy"><div class="price">${fmt(r.cost)} ✦</div></div>`}`;
+      ${done ? '' : `<div class="card-buy"><div class="price">${fmt(price)} ✦</div></div>`}`;
     if (!done && open) card.onclick = () => { if (Engine.buyResearch(r.id)) { UI.pop(card); UI.shopDirty = true; } };
     box.appendChild(card);
-    if (!done && open) UI.refs.research[r.id] = { card, cost: r.cost };
+    if (!done && open) UI.refs.research[r.id] = { card, cost: price };
   });
 };
 
@@ -399,6 +404,18 @@ UI.refreshMeta = function () {
   const nextAt = Math.ceil(BAL.shardDiv * Math.pow(gain + 1, 1 / BAL.shardPow));
   $('meta-next').textContent = `+1 éclat à ${fmtInt(nextAt)} m`;
 
+  /* Le gain traduit en production, avant / après. « +13 éclats » ne veut rien
+     dire tant qu'on n'a pas compris que chaque éclat vaut +10 % à vie. */
+  const now = 1 + BAL.shardBonus * S.shardsTotal;
+  const after = 1 + BAL.shardBonus * (S.shardsTotal + gain);
+  $('meta-pitch').innerHTML = gain < 1
+    ? `Descendez à <b>${BAL.shardDiv} m</b> au moins pour que le comblement rapporte un éclat.`
+    : `Chaque éclat augmente votre production de <b>${Math.round(BAL.shardBonus * 100)} %</b>,
+       <b>définitivement et dès qu'il est gagné</b> — sans rien acheter dans l'arbre ci-dessous.<br>
+       Combler maintenant : bonus permanent <b>×${fmt(now, 2)} → ×${fmt(after, 2)}</b>
+       <span class="pb-gain">(+${Math.round((after / now - 1) * 100)} % de production pour
+       toutes vos fouilles suivantes)</span>`;
+
   const btn = $('btn-prestige');
   btn.disabled = gain < 1;
   btn.textContent = gain < 1 ? `Combler (0 éclat — descendez à ${BAL.shardDiv} m)` : `Combler le puits — +${fmtInt(gain)} ◈`;
@@ -460,6 +477,24 @@ UI.refreshDoctrineBadge = function () {
   badge.classList.remove('hidden');
   badge.style.setProperty('--c', d.color);
   badge.innerHTML = `<span class="db-lab">doctrine</span><span class="db-name">${d.name}</span>`;
+};
+
+/* ---- 3e ter. AIDE -------------------------------------------------------- */
+UI.showHintModal = function (h) {
+  $('hint-title').textContent = h.title;
+  $('hint-text').innerHTML = h.text;
+  $('modal-hint').classList.remove('hidden');
+  UI.hintOpen = true;
+};
+
+UI.buildHelp = function () {
+  const box = $('list-help');
+  const seen = HINTS.filter((h) => S.hintsSeen[h.id]);
+  box.innerHTML = seen.length
+    ? seen.map((h) => `<div class="help-item">
+         <h4>${h.title}</h4><div class="help-text">${h.text}</div></div>`).join('')
+    : `<p class="empty">Rien à expliquer pour l'instant : vous n'avez pas encore
+         débloqué de mécanique. Creusez, ça viendra.</p>`;
 };
 
 /* ---- 3f. SUCCÈS & STATS -------------------------------------------------- */
@@ -603,9 +638,14 @@ UI.refreshBuffs = function () {
   box.classList.remove('hidden');
   box.innerHTML = live.map((b) => {
     const bad = (b.prodMult && b.prodMult < 1) || (b.digCostMult && b.digCostMult > 1);
-    return `<div class="buff${bad ? ' bad' : ''}">
+    /* Un effet différé s'affiche en attente, avec le temps avant son début :
+       sinon le joueur voit deux lignes et croit qu'elles agissent ensemble. */
+    const pending = (b.from || 0) > S.playTime;
+    return `<div class="buff${bad ? ' bad' : ''}${pending ? ' pending' : ''}">
         <span class="bf-name">${b.name}</span>
-        <span class="bf-time">${fmtTime(b.until - S.playTime)}</span>
+        <span class="bf-time">${pending
+          ? 'dans ' + fmtTime(b.from - S.playTime)
+          : fmtTime(b.until - S.playTime)}</span>
       </div>`;
   }).join('');
 };
@@ -638,10 +678,11 @@ UI.render = function () {
   if (UI.wellDirty && sig !== UI._wellSig) { UI._wellSig = sig; UI.buildWell(); }
   UI.wellDirty = false;
   if (UI.collectionDirty) { UI.buildCollection(); UI.collectionDirty = false; }
-  if (UI.statsDirty)      { UI.buildStats(); UI.statsDirty = false; }
+  if (UI.statsDirty)      { UI.buildStats(); UI.buildHelp(); UI.statsDirty = false; }
   if (UI.logDirty)        { UI.refreshLog(); UI.logDirty = false; }
   if (UI.flashArtefact)   { UI.showArtefactFlash(UI.flashArtefact); UI.flashArtefact = null; }
   if (UI.showEvent)       { UI.showEventModal(UI.showEvent); UI.showEvent = null; }
+  if (UI.showHint)        { UI.showHintModal(UI.showHint); UI.showHint = null; UI.statsDirty = true; }
 
   UI.refreshHeader();
   UI.refreshWell();

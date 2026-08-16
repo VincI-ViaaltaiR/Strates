@@ -66,7 +66,10 @@ si le joueur peut l'évaluer. Les paris montrent leurs deux issues avec leurs
 probabilités.
 
 Certains choix ouvrent des **effets temporaires** (production, coût de descente)
-affichés en haut de la colonne du puits avec leur décompte.
+affichés en haut de la colonne du puits avec leur décompte. Un effet peut être
+**différé** (`delay`) pour s'enchaîner au lieu de se superposer : accorder une
+pause arrête d'abord le chantier, *puis* l'équipe reposée produit mieux —
+simultanés, les deux se neutralisaient et la scène n'avait plus de sens.
 
 Ils devraient **rythmer sans accélérer**. Le groupe témoin du banc d'essai
 mesure aujourd'hui **+11 % de profondeur en 8 h** (25 parties) : ce n'est pas
@@ -84,6 +87,39 @@ chiffre se stabilise et le verdict est clair.
   et le plancher `max(0, …)` absorbe le reste. Ajouter des coûts en sédiment n'a
   strictement rien changé à la mesure. Les coûts passent donc par un effet
   « Chantier ralenti » (production ×0,5), qu'aucune stratégie n'esquive.
+
+### Expliquer le jeu sans le déflorer
+
+Un joueur a atteint **200 m sans jamais combler son puits**. Il jugeait l'arbre
+Mémoire sur son contenu — « le premier nœud utile coûte 45 éclats » — sans
+savoir que *chaque éclat donne déjà +10 % de production à vie, sans rien
+acheter*. Cette information n'existait que dans un compteur affichant « +0 % »
+tant qu'on n'avait pas comblé : **il fallait avoir compris pour pouvoir
+comprendre.** Ce n'est pas une erreur de joueur, c'est un défaut du jeu.
+
+Trois réponses, complémentaires :
+
+- **Aides contextuelles** (`HINTS` dans `content.js`) — une fenêtre au moment
+  précis où une mécanique se débloque, jamais avant. Une seule à la fois : trois
+  fenêtres d'affilée se ferment sans être lues.
+- **Onglet Aide** — les mêmes textes, consultables ensuite à tout moment. Il ne
+  contient *que* les mécaniques déjà rencontrées : le sujet du jeu reste de ne
+  pas savoir ce qu'il y a en dessous.
+- **Panneau de comblement explicite** — il affiche désormais « bonus permanent
+  ×1,0 → ×2,3 » avant l'action, pas après.
+
+Règle générale : **aucune aide ne parle d'une mécanique non débloquée.**
+
+### Le Savoir ne doit jamais dormir
+
+Une fois les 18 recherches terminées, le Savoir ne servait plus à rien — un
+joueur en avait 20 millions inutilisés. Une ressource sans usage casse la boucle
+qui la produit : les artefacts perdaient d'un coup la moitié de leur intérêt.
+
+Trois **recherches répétables** (Approfondissement, Étaiement, Prospection)
+closent l'arbre. Leur coût est multiplié à chaque niveau (×1,9 à ×2,3), donc
+elles absorbent n'importe quelle quantité de savoir sans jamais devenir
+gratuites, pour un effet composé modeste par niveau.
 
 ### Les doctrines de chantier
 
@@ -267,9 +303,10 @@ risque d'écraser sa progression.
 
 ## Contenu actuel
 
-10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches ·
-31 artefacts · 15 événements de forage · **4 doctrines** avec leurs maîtrises ·
-10 nœuds de mémoire · 20 succès.
+10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches
+**+ 3 répétables sans limite** · 31 artefacts · 15 événements de forage ·
+4 doctrines avec leurs maîtrises · 10 nœuds de mémoire · 20 succès ·
+9 aides contextuelles.
 
 Profil mesuré des doctrines (médiane sur 5 parties de 8 h, sans éclats) :
 
@@ -352,11 +389,11 @@ précisément ce que l'URL évite.
 
 ## Pistes pour la suite
 
-- **Reprendre le réglage des événements** — ils accélèrent de +11 %, mesuré sur
+- **Reprendre le réglage des événements** — ils accélèrent de +13 %, mesuré sur
   25 parties. À traiter en durcissant les ralentissements, puis en re-mesurant.
-- **Arbre de recherche visuel** — la liste actuelle ne montre pas les
-  dépendances ; une disposition en branches les rendrait lisibles d'un coup d'œil
 - **Défis de fouille** — rejouer avec un handicap (sans descente auto, sans
   artefacts) pour un bonus permanent, à la manière d'Antimatter Dimensions
+- **Une aide sur les doctrines dans le panneau lui-même** — l'aide contextuelle
+  ne se déclenche qu'après le premier comblement
 - Un deuxième axe de prestige au-delà du Cœur
 - Sons et musique d'ambiance

@@ -23,7 +23,7 @@
    version ? ». À incrémenter en même temps que le `?v=` des balises
    <script>/<link> de index.html, qui force le navigateur à recharger les
    fichiers au lieu de resservir ceux qu'il a en cache. */
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
@@ -223,6 +223,28 @@ const RESEARCH = [
 
   { id: 'singularite', name: 'Singularité contrôlée', cost: 500000, req: ['xenologie', 'forage_continu'],
     desc: "Production ×6.", fx: { prodMult: 6 } },
+
+  /* --- RECHERCHES RÉPÉTABLES ---------------------------------------------
+     PROBLÈME RÉSOLU : une fois les 18 recherches terminées, le Savoir ne
+     servait plus à rien — un joueur en avait 20 millions dormants. Une
+     ressource sans usage casse la boucle qui la produit : les artefacts
+     perdaient d'un coup la moitié de leur intérêt.
+
+     Ces trois nœuds n'ont pas de fin. Leur coût est multiplié à chaque niveau,
+     donc ils absorbent n'importe quelle quantité de savoir sans jamais devenir
+     gratuits, et leur effet composé reste modeste par niveau.
+     ------------------------------------------------------------------------ */
+  { id: 'approfondissement', name: 'Approfondissement', cost: 60000, req: ['singularite'],
+    repeat: true, costMult: 1.9,
+    desc: "Production ×1,10 par niveau. Sans limite de niveau.", fx: { prodMult: 1.10 } },
+
+  { id: 'etaiement', name: 'Étaiement permanent', cost: 90000, req: ['singularite'],
+    repeat: true, costMult: 2.1,
+    desc: "Coût de descente ×0,97 par niveau. Sans limite de niveau.", fx: { digCostMult: 0.97 } },
+
+  { id: 'prospection', name: 'Prospection continue', cost: 120000, req: ['singularite'],
+    repeat: true, costMult: 2.3,
+    desc: "Chance d'artefact ×1,06 par niveau. Sans limite de niveau.", fx: { artefactChanceMult: 1.06 } },
 ];
 
 /* -------------------------------------------------------------------------
@@ -495,7 +517,8 @@ const EVENTS = [
       { label: "Accorder la pause", hint: "Le chantier s'arrête, puis repart mieux.",
         fx: { buffs: [
           { name: 'Chantier ralenti', dur: 160, prodMult: 0.35 },
-          { name: 'Équipe reposée', dur: 300, prodMult: 1.4 },
+          /* `delay` = l'équipe ne se repose qu'APRÈS l'arrêt, pas pendant. */
+          { name: 'Équipe reposée', dur: 300, prodMult: 1.5, delay: 160 },
         ] } },
       { label: "Refuser, on continue", hint: "Rien ne s'arrête. Le moral, si.",
         fx: { buff: { name: 'Moral entamé', dur: 300, prodMult: 0.8 } } },
@@ -674,6 +697,118 @@ const ACHIEVEMENTS = [
   { id: 'a_sed1e15', name: 'Continent',             desc: "Accumuler 1 P de sédiment.",     check: (S) => S.totalSediment >= 1e15 },
   { id: 'a_pres1',   name: 'Reboucher',             desc: "Combler le puits une fois.",     check: (S) => S.prestiges >= 1 },
   { id: 'a_pres5',   name: 'Recommencer',           desc: "Combler le puits 5 fois.",       check: (S) => S.prestiges >= 5 },
+];
+
+/* -------------------------------------------------------------------------
+   AIDES CONTEXTUELLES — expliquées AU MOMENT du déblocage, jamais avant.
+
+   POURQUOI : un joueur a atteint 200 m sans jamais combler son puits, parce
+   qu'il jugeait l'arbre Mémoire sur son contenu (« le premier nœud utile coûte
+   45 éclats ») sans savoir que CHAQUE ÉCLAT donne déjà +10 % de production à
+   vie. Cette information n'était visible que dans un compteur affichant
+   « +0 % » tant qu'on n'avait pas comblé : il fallait avoir compris pour
+   pouvoir comprendre.
+
+   Règle : aucune aide ne parle d'une mécanique non débloquée — le sujet du jeu
+   reste de ne pas savoir ce qu'il y a en dessous. On explique ce qui vient
+   d'apparaître, une seule fois, et l'onglet Aide le garde consultable ensuite.
+   ------------------------------------------------------------------------- */
+const HINTS = [
+  {
+    id: 'h_sediment', title: 'Le sédiment travaille pour vous',
+    when: (S) => totalTools(S) >= 1,
+    text: `Vos outils produisent du <b>sédiment (σ)</b> en continu, même quand vous ne
+      cliquez pas — c'est tout l'intérêt. Le chiffre vert sous le compteur indique ce
+      qu'ils rapportent par seconde.<br><br>
+      Le sédiment sert à <b>deux choses en concurrence</b> : acheter des outils, et payer
+      la descente. C'est l'arbitrage central du jeu : descendre ouvre du contenu nouveau,
+      investir accélère tout le reste.`,
+  },
+  {
+    id: 'h_depth', title: 'Le puits',
+    when: (S) => S.maxDepth >= 3,
+    text: `Chaque mètre coûte <b>7,5 % de plus que le précédent</b>. Aucune production, si
+      grande soit-elle, ne « termine » donc le puits : il y a toujours un mètre de plus.<br><br>
+      Descendre révèle de <b>nouvelles strates</b> — chacune avec ses propres artefacts, ses
+      propres textes, et une roche plus dure. La colonne de gauche affiche <i>? ? ?</i> pour
+      celle qui vient : vous ne saurez ce qu'il y a en dessous qu'en y allant.`,
+  },
+  {
+    id: 'h_artefact', title: 'Les artefacts ne se perdent jamais',
+    when: (S) => Object.keys(S.artefacts).length >= 1,
+    text: `Creuser exhume parfois un <b>artefact</b>. Il rapporte du <b>Savoir (✦)</b>, et
+      un exemplaire inédit en rapporte trois fois plus.<br><br>
+      Surtout : chaque <b>type différent</b> découvert accorde un bonus permanent, et la
+      collection est la <b>seule chose qui survit à tout</b> — y compris au comblement du
+      puits. Consultez-la dans l'onglet <b>Collection</b> : ce que vous y lisez raconte
+      quelque chose.`,
+  },
+  {
+    id: 'h_research', title: 'La recherche',
+    when: (S) => S.knowledge >= 8,
+    text: `Le <b>Savoir</b> s'échange contre des <b>recherches</b>, dans l'onglet du même
+      nom. Elles débloquent des capacités décisives — descente automatique, progression
+      hors-ligne, comblement du puits.<br><br>
+      <b>Attention :</b> les recherches sont <i>perdues</i> quand vous comblez le puits.
+      La collection d'artefacts et la mémoire, elles, sont conservées.`,
+  },
+  {
+    id: 'h_autodig', title: 'Descente automatique : un vrai levier',
+    when: (S) => !!S.research.treuil_auto,
+    text: `Le puits peut maintenant s'approfondir tout seul. Le sélecteur sous les boutons
+      propose trois politiques, et ce choix compte :<br><br>
+      <b>arrêt</b> — rien ne part dans le puits, tout votre sédiment reste disponible pour
+      acheter des outils. C'est le mode des phases d'investissement.<br>
+      <b>prudent</b> — ne descend qu'avec 20× le prix du mètre d'avance. Le mode par défaut.<br>
+      <b>à fond</b> — descend dès que possible, et ne laisse donc plus rien à dépenser.
+      Le mode des phases de poussée.<br><br>
+      Alterner entre les deux extrêmes est plus efficace que rester au milieu.`,
+  },
+  {
+    id: 'h_prestige', title: 'Combler le puits : lisez ceci avant de juger',
+    when: (S) => !!S.research.combler && S.prestiges === 0,
+    text: `Combler le puits rouvre un chantier ailleurs. Vous <b>perdez</b> le sédiment,
+      les outils, les améliorations, les recherches et la profondeur.<br><br>
+      Vous <b>conservez</b> la collection d'artefacts, la mémoire gravée et les succès.<br><br>
+      <b>Et voici ce qui change tout :</b> vous gagnez des <b>éclats de mémoire (◈)</b>, et
+      <u>chaque éclat possédé augmente votre production de 10 %, définitivement</u>. Ce bonus
+      n'est pas dans l'arbre de la Mémoire : il est acquis dès l'instant où l'éclat est gagné.
+      Une dizaine d'éclats double donc votre production pour <i>toutes</i> les fouilles suivantes.<br><br>
+      L'arbre de la Mémoire, lui, se paie <i>en plus</i> avec ces mêmes éclats.<br><br>
+      Autrement dit : <b>combler tôt et souvent est presque toujours gagnant.</b> Le panneau
+      Mémoire vous montre exactement ce que le comblement rapporterait maintenant.`,
+  },
+  {
+    id: 'h_doctrine', title: 'Les doctrines de chantier',
+    when: (S) => S.prestiges >= 1,
+    text: `Chaque nouvelle fouille se mène sous une <b>doctrine</b>, choisie dans l'onglet
+      Mémoire. C'est un engagement pour toute la fouille : beaucoup dans un domaine, moins
+      dans un autre.<br><br>
+      <b>Ingénierie</b> vise les éclats — la progression d'une fouille à l'autre.<br>
+      <b>Archéologie</b> vise le savoir et la collection.<br>
+      <b>Spéléologie</b> vise la profondeur, et donc les strates lointaines.<br><br>
+      Aucune n'est meilleure : elles donnent des parties de formes différentes. Mener
+      <b>3 fouilles</b> sous la même doctrine en acquiert la <b>maîtrise</b>, un bonus
+      permanent conservé ensuite quoi qu'il arrive — de quoi valoir la peine de toutes
+      les essayer.`,
+  },
+  {
+    id: 'h_offline', title: 'Le chantier tourne sans vous',
+    when: (S) => !!S.research.equipes_nuit,
+    text: `Le chantier continue de produire <b>fenêtre fermée</b>, à 50 % du rendement et
+      jusqu'à 8 heures. Vous retrouverez à votre retour ce qui a été produit.<br><br>
+      Onglet en arrière-plan, en revanche, la partie tourne <b>normalement et à 100 %</b> :
+      vous pouvez laisser Strates dans un onglet et vaquer à autre chose.`,
+  },
+  {
+    id: 'h_events', title: 'Le puits pose des questions',
+    when: (S) => S.maxDepth >= 8,
+    text: `De temps en temps, le forage rencontre quelque chose et vous demande de trancher.
+      Chaque option affiche ses <b>conséquences chiffrées</b> sur votre situation du moment :
+      c'est là-dessus qu'il faut décider, pas sur la formulation.<br><br>
+      Aucune réponse n'est la bonne dans l'absolu — on échange toujours une chose contre une
+      autre. Certains choix sont des paris, et affichent leurs probabilités.`,
+  },
 ];
 
 /** Helper utilisé par les succès : nombre total d'outils possédés. */

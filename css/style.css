@@ -233,6 +233,29 @@ main > * { min-height: 0; }
 .pb-grid div span { display: block; font: 700 20px var(--mono); color: var(--amber); }
 .pb-grid div small { font-size: 10.5px; color: var(--txt-dim); text-transform: uppercase; letter-spacing: .5px; }
 .pb-next { text-align: center; font: 11px var(--mono); color: var(--txt-dim); margin: 10px 0 8px; }
+.pb-pitch {
+  margin: 0 0 12px; padding: 10px 12px;
+  background: rgba(224,163,62,.08); border: 1px solid var(--amber-dk);
+  border-radius: var(--radius); font-size: 13px; line-height: 1.6;
+}
+.pb-gain { color: var(--green); font-weight: 600; }
+
+/* ---------- Aide ---------- */
+.hint-box { width: min(600px, 94vw); border-top: 3px solid var(--amber); }
+.hint-lab { font: 10px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--amber); }
+.hint-box h2 { margin: 3px 0 10px; }
+#hint-text { font-size: 14px; line-height: 1.7; color: #d5cabb; }
+#hint-text b { color: var(--txt); }
+#hint-text u { text-decoration-color: var(--amber); text-underline-offset: 3px; }
+.hint-note { font-size: 11.5px; color: var(--txt-dim); align-self: center; }
+.help-item {
+  padding: 12px 14px; margin-bottom: 8px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--amber-dk); border-radius: var(--radius);
+}
+.help-item h4 { margin: 0 0 6px; font-size: 14px; color: var(--amber); }
+.help-text { font-size: 13px; line-height: 1.65; color: var(--txt-dim); }
+.help-text b { color: var(--txt); }
 .prestige-box .big { width: 100%; }
 
 /* --------- Doctrines --------- */
@@ -427,6 +450,7 @@ main > * { min-height: 0; }
   background: #23301f; border: 1px solid #3d5535; color: #b9d3ac;
 }
 .buff.bad { background: #2f201d; border-color: #55352f; color: #d9b0a5; }
+.buff.pending { background: #241f1a; border-color: #3a322a; color: #8d8377; font-style: italic; }
 .bf-name { font-weight: 600; }
 .bf-time { font: 11px var(--mono); opacity: .75; }
 
@@ -435,6 +459,24 @@ main > * { min-height: 0; }
   font: 11px var(--mono); color: var(--txt);
   background: #100d0a; border: 1px solid var(--line); border-radius: var(--radius);
 }
+
+/* =========================== INFOBULLES ===========================
+   `title` natif met deux secondes à apparaître et ne se met pas en forme.
+   Un pseudo-élément suffit et reste lisible. */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 100;
+  width: 250px; padding: 9px 11px;
+  background: #2b241d; border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+  font: 12px/1.55 'Segoe UI', system-ui, sans-serif; text-align: left;
+  color: var(--txt-dim); white-space: normal;
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  transition: opacity .15s, transform .15s, visibility .15s;
+  pointer-events: none;
+}
+[data-tip]:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
 
 /* =========================== MOUVEMENT RÉDUIT ===========================
    Certaines personnes règlent leur système sur « animations réduites » —

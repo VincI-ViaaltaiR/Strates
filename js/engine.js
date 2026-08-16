@@ -134,10 +134,13 @@ const Engine = {
       else if (u.fx) applyFx(u.fx);
     }
 
-    /* --- 2. Recherches --- */
+    /* --- 2. Recherches. Une recherche répétable stocke son NIVEAU au lieu de
+       `true` ; son effet s'applique autant de fois qu'elle a de niveaux. --- */
     for (const id in S.research) {
       const r = BY_ID.research[id];
-      if (r && r.fx) applyFx(r.fx);
+      if (!r || !r.fx) continue;
+      const lvl = r.repeat ? (S.research[id] | 0) : 1;
+      for (let i = 0; i < lvl; i++) applyFx(r.fx);
     }
 
     /* --- 3. Artefacts : le bonus compte UNE fois par type découvert --- */
@@ -180,6 +183,7 @@ const Engine = {
     /* --- 7 bis. Effets temporaires issus des événements de forage --- */
     for (const b of S.buffs || []) {
       if (b.until <= S.playTime) continue;
+      if ((b.from || 0) > S.playTime) continue;   // effet différé, pas encore actif
       if (b.prodMult)           c.prodMult *= b.prodMult;
       if (b.digCostMult)        c.digCostMult *= b.digCostMult;
       if (b.artefactChanceMult) artChanceMult *= b.artefactChanceMult;
@@ -252,19 +256,38 @@ const Engine = {
     return true;
   },
 
+  /** Niveau actuel d'une recherche (0 ou 1 pour les non-répétables). */
+  researchLevel(id) {
+    const v = S.research[id];
+    return v === true ? 1 : (v | 0);
+  },
+
+  /** Prix du PROCHAIN niveau. Croît géométriquement pour les répétables. */
+  researchCost(r) {
+    if (!r.repeat) return r.cost;
+    return r.cost * Math.pow(r.costMult, this.researchLevel(r.id));
+  },
+
   researchAvailable(r) {
-    if (S.research[r.id]) return false;
+    if (S.research[r.id] && !r.repeat) return false;   // les répétables restent ouvertes
     return r.req.every((q) => S.research[q]);
   },
 
   buyResearch(id) {
     const r = BY_ID.research[id];
-    if (!r || !this.researchAvailable(r) || S.knowledge < r.cost) return false;
-    S.knowledge -= r.cost;
-    S.research[id] = true;
+    if (!r || !this.researchAvailable(r)) return false;
+    const price = this.researchCost(r);
+    if (S.knowledge < price) return false;
+
+    S.knowledge -= price;
+    if (r.repeat) S.research[id] = this.researchLevel(id) + 1;
+    else          S.research[id] = true;
+
     this.computeStats();
     UI.shopDirty = true;
-    logMsg('res', `Recherche terminée : <b>${r.name}</b>.`);
+    logMsg('res', r.repeat
+      ? `<b>${r.name}</b> — niveau ${this.researchLevel(id)}.`
+      : `Recherche terminée : <b>${r.name}</b>.`);
     return true;
   },
 
@@ -376,11 +399,12 @@ const Engine = {
     if (fx.depth)    out.push(`${fx.depth > 0 ? '+' : '−'}${Math.abs(fx.depth)} m de profondeur`);
 
     for (const b of buffList(fx)) {
+      const after = b.delay ? `<em>après ${fmtTime(b.delay)},</em> ` : '';
       if (b.prodMult) {
         /* On chiffre aussi le gain total sur la durée : « ×1,5 » ne dit rien,
            « ≈ +42 M σ sur 5 min » se compare à une somme immédiate. */
         const delta = c.sedPerSec * (b.prodMult - 1) * b.dur;
-        out.push(`production ×${fmt(b.prodMult, 2)} pendant ${fmtTime(b.dur)} ` +
+        out.push(after + `production ×${fmt(b.prodMult, 2)} pendant ${fmtTime(b.dur)} ` +
                  `<em>(≈ ${delta >= 0 ? '+' : '−'}${fmt(Math.abs(delta))} σ)</em>`);
       }
       if (b.digCostMult) {
@@ -456,7 +480,12 @@ const Engine = {
     }
 
     for (const src of buffList(fx)) {
-      const b = Object.assign({}, src, { until: S.playTime + src.dur });
+      /* `delay` décale le DÉMARRAGE de l'effet. Il sert à enchaîner deux
+         effets au lieu de les superposer : accorder une pause arrête d'abord
+         le chantier, PUIS l'équipe reposée produit mieux. Superposés, les deux
+         se neutralisaient (×0,35 × ×1,4) et la scène n'avait plus de sens. */
+      const from = S.playTime + (src.delay || 0);
+      const b = Object.assign({}, src, { from, until: from + src.dur });
       /* Un même effet ne se cumule pas avec lui-même : il se renouvelle.
          Sinon deux « Forage accordé » d'affilée donneraient −70 % de coût. */
       S.buffs = S.buffs.filter((x) => x.name !== b.name);
@@ -528,6 +557,23 @@ const Engine = {
     }
 
     this.checkAchievements();
+    this.checkHints();
+  },
+
+  /**
+   * Aides contextuelles : on montre la PREMIÈRE non vue dont la condition est
+   * remplie, et une seule à la fois. Enchaîner trois fenêtres d'explication
+   * d'affilée ferait fermer les trois sans les lire.
+   */
+  checkHints() {
+    if (UI.showHint || UI.hintOpen) return;
+    for (const h of HINTS) {
+      if (!S.hintsSeen[h.id] && h.when(S)) {
+        S.hintsSeen[h.id] = true;
+        UI.showHint = h;
+        return;
+      }
+    }
   },
 
   checkAchievements() {
@@ -611,6 +657,12 @@ const Engine = {
 
     /* Ce que la méta permet d'emporter dans la nouvelle fouille. */
     const keep = {};
+
+    /* Le Protocole de comblement reste acquis. Le racheter à chaque fouille
+       (4 500 savoir) ne serait pas un choix mais une taxe : on connaît déjà la
+       technique. Il reste dans la liste, coché — et sert toujours de prérequis
+       à la Cartographie du puits, qui, elle, se recherche à nouveau. */
+    keep.research = { combler: true };
     if (S.meta.fondations)     keep.sediment = 250000;
     if (S.meta.savoir_retenu)  keep.knowledge = Math.floor(S.knowledge * 0.30);
     if (S.meta.depot) {

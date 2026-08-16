@@ -7,7 +7,7 @@
 <!-- Le `?v=` change à chaque version : sans lui, un navigateur qui a déjà
      visité le jeu resservirait ses anciens fichiers depuis son cache et le
      joueur resterait bloqué sur une version périmée sans le savoir. -->
-<link rel="stylesheet" href="css/style.css?v=1.2.0">
+<link rel="stylesheet" href="css/style.css?v=1.3.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
 </head>
 <body>
@@ -16,21 +16,23 @@
 <header id="topbar">
   <div class="brand">STRATES<span class="brand-sub">journal de fouille</span></div>
 
+  <!-- data-tip : infobulles maison. Les quatre ressources sont ce que le
+       joueur regarde le plus, et ce qu'il comprend le moins au début. -->
   <div class="resources">
-    <div class="res">
+    <div class="res" data-tip="Produit en continu par vos outils. Sert à la fois à acheter des outils et à payer la descente — c'est l'arbitrage central du jeu.">
       <div class="res-val" id="res-sediment">0</div>
       <div class="res-lab">sédiment σ</div>
       <div class="res-rate" id="res-rate">0 σ/s</div>
     </div>
-    <div class="res">
+    <div class="res" data-tip="Gagné en exhumant des artefacts. Achète les recherches. Perdu au comblement du puits — mieux vaut le dépenser avant.">
       <div class="res-val" id="res-knowledge">0</div>
       <div class="res-lab">savoir ✦</div>
     </div>
-    <div class="res">
+    <div class="res" data-tip="Chaque mètre coûte 7,5 % de plus que le précédent. Descendre révèle de nouvelles strates, de nouveaux outils et de nouveaux artefacts.">
       <div class="res-val" id="res-depth">0 m</div>
       <div class="res-lab">profondeur</div>
     </div>
-    <div class="res hidden" id="res-shard-box">
+    <div class="res hidden" id="res-shard-box" data-tip="Gagnés en comblant le puits. Chaque éclat obtenu augmente votre production de 10 % à vie, sans rien acheter. Ils servent EN PLUS à graver la Mémoire.">
       <div class="res-val" id="res-shards">0</div>
       <div class="res-lab">éclats ◈</div>
     </div>
@@ -86,6 +88,7 @@
       <button class="tab" data-tab="collection">Collection</button>
       <button class="tab" data-tab="memoire">Mémoire</button>
       <button class="tab" data-tab="stats">Journal de bord</button>
+      <button class="tab" data-tab="aide">Aide <span id="badge-aide" class="badge hidden"></span></button>
     </nav>
 
     <!-- OUTILS -->
@@ -147,6 +150,11 @@
             <div><span id="meta-count">0</span><small>comblements</small></div>
           </div>
           <div class="pb-next" id="meta-next"></div>
+          <!-- L'information décisive, en clair : ce que le comblement change
+               CONCRÈTEMENT pour la production. Sans elle, le joueur juge le
+               prestige sur le seul prix des nœuds de l'arbre et conclut, à
+               tort, qu'il n'en vaut pas la peine. -->
+          <div class="pb-pitch" id="meta-pitch"></div>
           <button id="btn-prestige" class="big danger">Combler le puits</button>
         </div>
         <div id="list-meta" class="list"></div>
@@ -159,6 +167,13 @@
       <table id="stat-table"></table>
       <div id="list-ach" class="ach-grid"></div>
     </div>
+    <!-- AIDE -->
+    <div class="tabpane hidden" id="pane-aide">
+      <div class="pane-head"><p>Les mécaniques que vous avez débloquées, expliquées.
+        Cette page se remplit au fur et à mesure — rien n'y est dévoilé d'avance.</p></div>
+      <div id="list-help"></div>
+    </div>
+
   </section>
 
   <!-- ---------- COLONNE DROITE : JOURNAL ---------- -->
@@ -191,6 +206,19 @@
   </div>
 </div>
 
+<!-- Aide contextuelle, montrée une seule fois au déblocage d'une mécanique -->
+<div class="modal hidden" id="modal-hint">
+  <div class="modal-box hint-box">
+    <div class="hint-lab">Nouveau dans votre chantier</div>
+    <h2 id="hint-title">…</h2>
+    <div id="hint-text"></div>
+    <div class="modal-row">
+      <button id="hint-ok">Compris</button>
+      <span class="hint-note">Consultable à tout moment dans l'onglet <b>Aide</b>.</span>
+    </div>
+  </div>
+</div>
+
 <!-- Événement de forage : volontairement SANS bouton de fermeture.
      Le puits pose une question, on y répond. -->
 <div class="modal hidden" id="modal-event">
@@ -215,11 +243,11 @@
 
 <!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
      en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
-<script src="js/utils.js?v=1.2.0"></script>
-<script src="js/content.js?v=1.2.0"></script>
-<script src="js/state.js?v=1.2.0"></script>
-<script src="js/engine.js?v=1.2.0"></script>
-<script src="js/ui.js?v=1.2.0"></script>
-<script src="js/main.js?v=1.2.0"></script>
+<script src="js/utils.js?v=1.3.0"></script>
+<script src="js/content.js?v=1.3.0"></script>
+<script src="js/state.js?v=1.3.0"></script>
+<script src="js/engine.js?v=1.3.0"></script>
+<script src="js/ui.js?v=1.3.0"></script>
+<script src="js/main.js?v=1.3.0"></script>
 </body>
 </html>

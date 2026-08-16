@@ -22,7 +22,9 @@ function newRun(keep = {}) {
     /* --- Possessions de la partie en cours --- */
     tools: keep.tools || {},        // { pelle: 12, pioche: 3, ... }
     upgrades: {},                   // { up_pelle_0: true, ... }
-    research: {},                   // { stratigraphie: true, ... }
+    /* `research` peut être pré-remplie : le Protocole de comblement, une fois
+       découvert, n'a pas à être racheté à chaque fouille (voir doPrestige). */
+    research: keep.research || {},  // { stratigraphie: true, ... }
 
     /* --- Événements de forage --- */
     buffs: [],            // effets temporaires actifs : [{ name, until, prodMult… }]
@@ -51,6 +53,7 @@ function newGame() {
     shardsTotal: 0,       // éclats gagnés à vie → bonus de production passif
     prestiges: 0,
     achievements: {},     // { a_first: true, ... }
+    hintsSeen: {},        // aides contextuelles déjà montrées (persistantes)
 
     /* --- Statistiques globales --- */
     totalSediment: 0,
@@ -118,7 +121,7 @@ function loadGame() {
     S = Object.assign(newGame(), data);
     // Les sous-objets doivent aussi être garantis non-nuls.
     ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
-     'doctrineRuns','mastered'].forEach((k) => {
+     'doctrineRuns','mastered','hintsSeen'].forEach((k) => {
       if (!S[k] || typeof S[k] !== 'object') S[k] = {};
     });
     if (!Array.isArray(S.log)) S.log = [];

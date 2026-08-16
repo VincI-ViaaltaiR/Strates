@@ -184,6 +184,12 @@ const Game = {
         });
     });
 
+    /* Aide contextuelle */
+    $('hint-ok').addEventListener('click', () => {
+      $('modal-hint').classList.add('hidden');
+      UI.hintOpen = false;      // libère la file : l'aide suivante pourra sortir
+    });
+
     /* Menu options */
     $('opt-version').textContent = 'v' + VERSION;
     $('btn-menu').addEventListener('click', () => $('modal-options').classList.remove('hidden'));
@@ -247,6 +253,10 @@ const Game = {
       /* Le joueur simulé répond au hasard aux événements. Sans cela, le tout
          premier resterait en attente et bloquerait tous les suivants — l'état
          de démo ne ressemblerait plus à une vraie partie. */
+      /* Le joueur simulé « lit » les aides au fil de l'eau, sans quoi la
+         première bloquerait la file et l'onglet Aide resterait vide. */
+      UI.showHint = null;
+
       if (S.pendingEvent && t < seconds - 60) {
         const ev = BY_ID.event[S.pendingEvent];
         Engine.resolveEvent(S.pendingEvent, Math.floor(Math.random() * ev.choices.length));
