@@ -31,9 +31,15 @@ function newRun(keep = {}) {
     pendingEvent: null,   // id de l'événement en attente de réponse (survit au rechargement)
     nextEventAt: 0,       // horodatage : pas de nouvel événement avant
 
+    /* --- Défi armé pour cette fouille --- */
+    challenge: keep.challenge || null,   // id du défi en cours, ou null
+    challengeFailed: false,              // règle violée : la fouille ne compte plus
+
     /* --- Statistiques de la run --- */
     runStart: Date.now(),
     runSediment: 0,
+    runArtefacts: 0,
+    runEvents: 0,
   };
 }
 
@@ -54,6 +60,27 @@ function newGame() {
     prestiges: 0,
     achievements: {},     // { a_first: true, ... }
     hintsSeen: {},        // aides contextuelles déjà montrées (persistantes)
+    heartReached: false,  // le Cœur a été touché : bonus définitif acquis
+    helpUnread: 0,        // aides reçues et pas encore relues dans l'onglet Aide
+
+    /* --- Défis --- */
+    nextChallenge: null,  // défi armé pour la prochaine fouille
+    challengesDone: {},   // { c_manuel: true, … } défis validés, définitifs
+
+    /* --- Les neuf unités (seconde couche de prestige) --- */
+    unit: 3,              // « UNITÉ 3 / 9 » : celle où le récit commence
+    unitTrait: null,      // trait tiré pour l'unité courante (null = la première)
+    unitsLeft: 0,         // nombre d'unités quittées
+    fragments: 0,         // monnaie de la couche « unités »
+    fragmentsTotal: 0,
+    fragmentsBought: {},  // { f_semence: true, … }
+
+    /* --- Son --- */
+    sound: true,
+    volume: 0.35,
+
+    /* --- Bilan de la dernière fouille, montré au comblement --- */
+    lastRun: null,
 
     /* --- Statistiques globales --- */
     totalSediment: 0,
@@ -121,11 +148,19 @@ function loadGame() {
     S = Object.assign(newGame(), data);
     // Les sous-objets doivent aussi être garantis non-nuls.
     ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
-     'doctrineRuns','mastered','hintsSeen'].forEach((k) => {
+     'doctrineRuns','mastered','hintsSeen','challengesDone','fragmentsBought'].forEach((k) => {
       if (!S[k] || typeof S[k] !== 'object') S[k] = {};
     });
     if (!Array.isArray(S.log)) S.log = [];
     if (!Array.isArray(S.buffs)) S.buffs = [];
+
+    /* --- MIGRATIONS DE SAUVEGARDE ---
+       Le Protocole de comblement est devenu définitif (v1.3). Une partie
+       sauvegardée AVANT ce changement a déjà comblé sans porter le marqueur :
+       sans cette ligne, elle devrait le racheter une dernière fois. Corriger
+       l'état au chargement est plus sûr que de compter sur le prochain passage
+       dans doPrestige(). */
+    if (S.prestiges > 0 && !S.research.combler) S.research.combler = true;
     return true;
   } catch (e) {
     console.error('Sauvegarde corrompue :', e);

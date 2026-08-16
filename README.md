@@ -162,6 +162,87 @@ doctrine se limite à `digCostMult`, qui décale la courbe sans changer sa pente
 **3. Chaque doctrine doit dominer une colonne, pas toutes.** C'est le critère
 que le banc d'essai affiche ; s'il est violé, le choix n'en est plus un.
 
+### Le Cœur — l'aboutissement
+
+⚠️ *Cette section dévoile la fin du récit.*
+
+<details>
+<summary>Ouvrir</summary>
+
+Le Cœur s'ouvre à 470 m, mais on ne le **touche** qu'à `HEART_DEPTH` = **500 m**.
+Auparavant il ne s'y passait rien : la dernière strate se prolongeait à l'infini
+et tout le récit — la cité sous le socle, la paroi poncée, « UNITÉ 3 / 9 », le
+neuvième alphabet, la Graine « pas finie de pousser » — ne débouchait sur rien.
+
+À 500 m, une fenêtre de conclusion paie ces indices : la planète est une graine,
+il en existe neuf, et le joueur **emporte la Graine** — production ×1,25 et
+éclats ×1,25, définitivement, y compris à travers les comblements.
+
+**Ce n'est pas une fin de partie.** Le puits continue, chaque mètre coûtant
+toujours 7,5 % de plus que le précédent. Un incrémental ne se termine pas, mais
+il doit pouvoir aboutir : la différence entre les deux est tout le sujet. Deux
+succès accompagnent le passage — *La Graine* (500 m) et *Il n'y a pas de fond*
+(700 m).
+
+Compter trois à quatre fouilles pour y parvenir.
+
+</details>
+
+### Synergies d'outillage
+
+Chaque outil reçoit un bonus par exemplaire de l'outil qui le **seconde** : un
+tunnelier ne sert à rien sans les pompes qui assèchent devant lui. Acheter
+cesse d'être une opération sans décision — entretenir un outil « dépassé »
+redevient rentable, et monter le dernier sorti n'est plus systématiquement le
+bon coup.
+
+**Piège de calibrage :** en fin de partie on possède ~200 exemplaires d'un
+outil. À 2 % l'unité, la synergie valait ×5 et le banc mesurait +18 % de
+profondeur. Règle : viser `pct × 200 ≈ 1`, jamais davantage.
+
+### Défis de fouille
+
+Une privation sèche valable pour toute la fouille suivante — descente
+automatique coupée, aucun artefact, quatre outils supprimés, aucun événement.
+Atteindre la profondeur demandée sans enfreindre la règle accorde un bonus
+définitif. Contrairement aux doctrines, ce n'est pas un arbitrage : le jeu
+redevient difficile là où l'on croyait avoir tout automatisé.
+
+### Les neuf unités — seconde couche de prestige
+
+⚠️ *Dévoile la suite du récit.*
+
+<details>
+<summary>Ouvrir</summary>
+
+Une fois le Cœur touché, on peut **partir** : abandonner cette graine pour une
+autre. C'est le reset le plus dur du jeu — éclats, mémoire gravée, doctrines,
+recherches, tout disparaît. Ne survivent que ce qui relève de la
+**connaissance** (collection, succès, maîtrises, défis relevés) et les
+**fragments d'unité**, dont les bonus dépassent de loin ceux de la mémoire.
+
+Chaque unité tire un **trait** (roche tendre, nécropole, croûte dense…) qui
+change la forme de la planète : on ne rejoue jamais tout à fait la même partie.
+Neuf unités en tout, numérotées comme l'indiquait la plaque de la Machinerie.
+
+</details>
+
+### Sons
+
+Entièrement **synthétisés** par l'API Web Audio ([`js/audio.js`](js/audio.js)) :
+oscillateurs et bruit blanc filtré, zéro fichier. Le jeu doit rester un dossier
+qu'on ouvre par double-clic — charger des `.mp3` en `file://` est bloqué par
+certains navigateurs et alourdirait le dépôt. Le contexte audio naît au premier
+clic, jamais au chargement : les navigateurs refusent tout son avant un geste
+du joueur. Interrupteur et volume dans le menu Options.
+
+### Bilan de fin de fouille
+
+Le comblement efface trois heures de partie en une ligne de journal. Une
+fenêtre récapitule désormais ce qu'on vient de vivre — profondeur, durée,
+sédiment, artefacts, recherches, décisions, doctrine, défi — avant de rouvrir
+un chantier.
+
 ### L'arbitrage central
 
 Le sédiment sert **à la fois** à acheter des outils et à descendre. Descendre
@@ -305,8 +386,17 @@ risque d'écraser sa progression.
 
 10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches
 **+ 3 répétables sans limite** · 31 artefacts · 15 événements de forage ·
-4 doctrines avec leurs maîtrises · 10 nœuds de mémoire · 20 succès ·
-9 aides contextuelles.
+4 doctrines avec leurs maîtrises · 10 nœuds de mémoire · 22 succès ·
+10 aides contextuelles · un aboutissement à 500 m.
+
+### Migrations de sauvegarde
+
+`loadGame()` répare les parties antérieures à un changement de règle. Une
+sauvegarde ayant déjà comblé avant la v1.3 n'avait pas le marqueur du Protocole
+de comblement, désormais définitif : elle aurait dû le racheter une fois. Le
+principe vaut pour la suite — **corriger l'état au chargement plutôt que de
+compter sur le prochain passage dans le code concerné**, sinon le correctif ne
+touche que les nouvelles parties.
 
 Profil mesuré des doctrines (médiane sur 5 parties de 8 h, sans éclats) :
 

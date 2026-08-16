@@ -27,7 +27,27 @@ const Game = {
       this.bindUI();
       UI.setTab(new URLSearchParams(location.search).get('tab') || 'outils');
       UI.shopDirty = UI.wellDirty = UI.collectionDirty = UI.statsDirty = UI.logDirty = true;
-      if (new URLSearchParams(location.search).get('diag')) this.diagOverlay();
+      const q = new URLSearchParams(location.search);
+      if (q.get('diag')) this.diagOverlay();
+      /* Deux leviers réservés aux captures de développement : certains écrans
+         ne s'ouvrent qu'après des dizaines d'heures de jeu réel et resteraient
+         donc invisibles à toute vérification automatisée. */
+      if (q.get('unlock')) {           // ouvre la couche « unités » (Cœur touché)
+        S.heartReached = true;
+        S.maxDepth = Math.max(S.maxDepth, HEART_DEPTH);
+        S.fragments = 6;
+        Engine.computeStats();
+      }
+      if (q.get('report')) {           // affiche un bilan de fouille d'exemple
+        S.lastRun = {
+          depth: Math.floor(S.maxDepth), shards: Engine.shardsFor(S.maxDepth),
+          artefacts: S.runArtefacts | 0, events: S.runEvents | 0,
+          research: Object.keys(S.research).length, sediment: S.runSediment,
+          seconds: S.playTime, doctrine: S.doctrine, challenge: S.challenge,
+          challengeDone: false, strata: Engine.strataAt(S.maxDepth).name,
+        };
+        this.showReport(S.lastRun);
+      }
       this.startClocks();
       return;
     }
@@ -133,16 +153,58 @@ const Game = {
      CONTRÔLES
      ----------------------------------------------------------------------- */
   bindUI() {
+    /* Le contexte audio ne peut naître que d'un geste réel du joueur : les
+       navigateurs refusent tout son avant une interaction. On l'accroche donc
+       au premier clic, quel qu'il soit, puis on se retire. */
+    const wake = () => { Sfx.init(); document.removeEventListener('pointerdown', wake); };
+    document.addEventListener('pointerdown', wake);
+
     /* Bêche : clic manuel */
     $('btn-dig').addEventListener('click', (ev) => {
       const g = Engine.click();
+      Sfx.play('dig');
       UI.floatGain(ev.clientX, ev.clientY - 10, '+' + fmt(g) + ' σ');
       UI.pop($('btn-dig'));
     });
 
     /* Descente manuelle */
     $('btn-descend').addEventListener('click', () => {
-      if (Engine.descend()) UI.pop($('btn-descend'));
+      if (Engine.descend()) { Sfx.play('descend'); UI.pop($('btn-descend')); }
+    });
+
+    /* Son : interrupteur et volume */
+    const snd = $('opt-sound-on'), vol = $('opt-volume');
+    snd.checked = S.sound !== false;
+    vol.value = Math.round((S.volume ?? 0.35) * 100);
+    snd.addEventListener('change', () => {
+      S.sound = snd.checked;
+      if (S.sound) { Sfx.init(); Sfx.play('buy'); }
+    });
+    vol.addEventListener('input', () => {
+      Sfx.init(); Sfx.setVolume(vol.value / 100);
+    });
+    vol.addEventListener('change', () => Sfx.play('buy'));
+
+    /* Bilan de fouille */
+    $('report-ok').addEventListener('click', () => $('modal-report').classList.add('hidden'));
+
+    /* Départ vers une autre unité — le reset le plus dur du jeu */
+    $('btn-leave').addEventListener('click', () => {
+      if (!Engine.canLeaveUnit()) return;
+      const gain = Engine.fragmentsFor(S.maxDepth);
+      this.confirm('Quitter cette graine ?',
+        `Vous perdez <b>tout</b> : sédiment, outils, recherches, profondeur, <b>éclats et
+         mémoire gravée</b>, doctrines engagées.<br><br>
+         Vous conservez : la collection d'artefacts, les succès, les maîtrises de doctrine,
+         les défis relevés.<br><br>
+         Vous gagnez : <b>${gain} fragment(s) d'unité ✧</b>, et une graine neuve avec sa
+         propre nature.`,
+        () => {
+          const g = Engine.leaveUnit();
+          saveGame(true);
+          UI.setTab('outils');
+          toast(`Unité ${S.unit} / 9 — +${g} ✧`);
+        });
     });
 
     /* Onglets */
@@ -180,7 +242,7 @@ const Game = {
           const g = Engine.doPrestige();
           saveGame(true);
           UI.setTab('outils');
-          toast(`Puits comblé. +${fmtInt(g)} ◈`);
+          this.showReport(S.lastRun);
         });
     });
 
@@ -327,6 +389,27 @@ log entries ...... ${S.log.length}</pre>`);
       $('modal-confirm').classList.add('hidden');
       onYes();
     });
+  },
+
+  /** Bilan de la fouille qui vient de s'achever. */
+  showReport(r) {
+    if (!r) return;
+    const doc = BY_ID.doctrine[r.doctrine];
+    const ch = r.challenge && BY_ID.challenge[r.challenge];
+    const row = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
+    $('report-title').textContent = `${fmtInt(r.depth)} m — ${r.strata}`;
+    $('report-body').innerHTML = `<table class="report-table">
+        ${row('Durée de la fouille', fmtTime(r.seconds))}
+        ${row('Profondeur atteinte', fmtInt(r.depth) + ' m')}
+        ${row('Sédiment extrait', fmt(r.sediment) + ' σ')}
+        ${row('Artefacts exhumés', fmtInt(r.artefacts))}
+        ${row('Recherches menées', fmtInt(r.research))}
+        ${row('Décisions de forage', fmtInt(r.events))}
+        ${doc && doc.id !== 'aucune' ? row('Doctrine', doc.name) : ''}
+        ${ch ? row('Défi', ch.name + (r.challengeDone ? ' — relevé ✓' : ' — échoué')) : ''}
+      </table>
+      <div class="report-gain">+${fmtInt(r.shards)} éclat(s) de mémoire ◈</div>`;
+    $('modal-report').classList.remove('hidden');
   },
 
   showOffline(r) {

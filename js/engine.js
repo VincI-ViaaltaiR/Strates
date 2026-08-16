@@ -34,13 +34,6 @@ const Engine = {
     return STRATA[0];
   },
 
-  /** La strate suivante, ou null si on est dans la dernière. */
-  nextStrata(depth) {
-    const cur = this.strataAt(depth);
-    const i = STRATA.indexOf(cur);
-    return STRATA[i + 1] || null;
-  },
-
   /**
    * Coût en sédiment pour gagner le mètre n° `d` (de d à d+1).
    * C'EST LA FORMULE CENTRALE DU JEU :
@@ -81,6 +74,9 @@ const Engine = {
 
   /** Un outil est-il visible ? (profondeur record atteinte) */
   toolUnlocked(t) {
+    /* Le défi « Outillage réduit » ferme les quatre derniers outils. */
+    const lim = S.calc && S.calc.toolLimit;
+    if (lim !== undefined && lim !== null && TOOLS.indexOf(t) >= lim) return false;
     return S.bestDepth >= t.unlock || (S.tools[t.id] || 0) > 0;
   },
 
@@ -170,6 +166,9 @@ const Engine = {
       if (m && m.mastery) applyFx(m.mastery.fx);
     }
 
+    /* --- 4 ter. La Graine, rapportée du Cœur. Définitive, survit à tout. --- */
+    if (S.heartReached) applyFx(HEART_BONUS);
+
     /* --- 5. Éclats gagnés à vie : bonus passif additif (lisible) --- */
     c.prodMult *= 1 + BAL.shardBonus * S.shardsTotal;
 
@@ -189,11 +188,38 @@ const Engine = {
       if (b.artefactChanceMult) artChanceMult *= b.artefactChanceMult;
     }
 
-    /* --- 8. Production totale = Σ(outils) × multiplicateur global --- */
+    /* --- 7 quater. Défi armé, unité courante, fragments --- */
+    const ch = S.challenge && BY_ID.challenge[S.challenge];
+    if (ch) {
+      if (ch.id === 'c_manuel')  c.autoDig = false;   // coupé, quoi qu'on ait cherché
+      if (ch.id === 'c_aveugle') c.artefactChance = 0;
+      if (ch.id === 'c_silence') c.noEvents = true;
+      if (ch.id === 'c_pauvre')  c.toolLimit = TOOLS.length - 4;
+    }
+    for (const id in S.challengesDone) {
+      const d = BY_ID.challenge[id];
+      if (d) applyFx(d.fx);
+    }
+    if (S.unitTrait && BY_ID.trait[S.unitTrait]) applyFx(BY_ID.trait[S.unitTrait].fx);
+    for (const id in S.fragmentsBought) {
+      const f = BY_ID.fragment[id];
+      if (f && f.fx) applyFx(f.fx);
+    }
+
+    /* --- 8. Production totale.
+       Chaque outil reçoit d'abord sa SYNERGIE : un pourcentage par exemplaire
+       de l'outil qui le seconde. Le calcul se fait ici, après les
+       multiplicateurs propres, pour que la synergie s'applique au total. --- */
+    c.synergy = {};
+    SYNERGIES.forEach((s) => {
+      const n = S.tools[s.from] || 0;
+      c.synergy[s.tool] = 1 + n * s.pct;
+    });
+
     let base = 0;
     TOOLS.forEach((t) => {
       const n = S.tools[t.id] || 0;
-      if (n) base += n * t.prod * c.toolMult[t.id];
+      if (n) base += n * t.prod * c.toolMult[t.id] * (c.synergy[t.id] || 1);
     });
     c.sedPerSec = base * c.prodMult;
 
@@ -240,6 +266,7 @@ const Engine = {
     if (S.sediment < price || qty < 1) return false;
     S.sediment -= price;
     S.tools[toolId] = (S.tools[toolId] || 0) + qty;
+    Sfx.play('buy');
     this.computeStats();
     UI.shopDirty = true;
     return true;
@@ -320,10 +347,33 @@ const Engine = {
     if (S.depth > S.maxDepth) S.maxDepth = S.depth;
     if (S.depth > S.bestDepth) S.bestDepth = S.depth;
 
+    /* Le Cœur : atteint une seule fois dans toute la vie de la partie, il
+       accorde un bonus définitif. L'explication est portée par l'aide `h_coeur`,
+       qui se déclenche au même seuil. */
+    if (S.depth >= HEART_DEPTH && !S.heartReached) {
+      S.heartReached = true;
+      Sfx.play('heart');
+      logMsg('coeur', `<b>LE CŒUR</b> — Vous emportez la Graine. Production et éclats ×1,25, ` +
+        `définitivement. Le puits, lui, continue.`);
+      this.computeStats();
+    }
+
+    /* Défi armé : atteindre la profondeur demandée le valide définitivement. */
+    if (S.challenge && !S.challengesDone[S.challenge]) {
+      const ch = BY_ID.challenge[S.challenge];
+      if (ch && S.depth >= ch.depth) {
+        S.challengesDone[S.challenge] = true;
+        Sfx.play('success');
+        logMsg('defi', `<b>Défi relevé : ${ch.name}</b> — ${ch.reward}`);
+        this.computeStats();
+      }
+    }
+
     /* Entrée dans une nouvelle strate → texte d'ambiance, une seule fois. */
     const st = this.strataAt(S.depth);
     if (!S.seenStrata[st.id]) {
       S.seenStrata[st.id] = true;
+      Sfx.play('strata');
       logMsg('strata', `<b>${st.name}</b> — ${st.intro}`);
     }
 
@@ -352,6 +402,7 @@ const Engine = {
      45 s « réelles »), et ils divergent aussi en progression hors-ligne.
      Le temps de jeu est la seule référence que le joueur perçoit réellement. */
   rollEvent(strata) {
+    if (S.calc.noEvents) return;                      // défi « Chantier muet »
     if (S.pendingEvent) return;                       // un seul à la fois
     if (S.playTime < (S.nextEventAt || 0)) return;    // temps de repos obligatoire
     if (Math.random() >= BAL.eventChance) return;
@@ -363,6 +414,8 @@ const Engine = {
     const ev = pick(pool);
     S.pendingEvent = ev.id;
     S.nextEventAt = S.playTime + BAL.eventCooldown;
+    S.runEvents = (S.runEvents | 0) + 1;
+    Sfx.play('event');
     UI.showEvent = ev;
   },
 
@@ -507,7 +560,10 @@ const Engine = {
     const gain = strata.knowledge * (isNew ? 3 : 1) * S.calc.knowledgeMult;
     S.knowledge += gain;
 
+    S.runArtefacts = (S.runArtefacts || 0) + 1;
+
     if (isNew) {
+      Sfx.play('artefact');
       logMsg('find', `<b>${a.name}</b> — ${a.text} <i>(+${fmt(gain)} savoir)</i>`);
       this.computeStats();          // le bonus de l'artefact s'applique tout de suite
       UI.collectionDirty = true;
@@ -570,6 +626,7 @@ const Engine = {
     for (const h of HINTS) {
       if (!S.hintsSeen[h.id] && h.when(S)) {
         S.hintsSeen[h.id] = true;
+        S.helpUnread = (S.helpUnread | 0) + 1;
         UI.showHint = h;
         return;
       }
@@ -637,6 +694,23 @@ const Engine = {
     const gain = this.shardsFor(S.maxDepth);
     if (gain < 1) return false;
 
+    /* Bilan de la fouille qui s'achève : il rend visible ce qu'on vient de
+       vivre, au seul moment où le jeu efface tout. Sans lui, trois heures de
+       partie disparaissaient en une ligne de journal. */
+    S.lastRun = {
+      depth: Math.floor(S.maxDepth),
+      shards: gain,
+      artefacts: S.runArtefacts | 0,
+      events: S.runEvents | 0,
+      research: Object.keys(S.research).length,
+      sediment: S.runSediment,
+      seconds: (Date.now() - S.runStart) / 1000,
+      doctrine: S.doctrine,
+      challenge: S.challenge,
+      challengeDone: !!(S.challenge && S.challengesDone[S.challenge]),
+      strata: this.strataAt(S.maxDepth).name,
+    };
+
     S.shards += gain;
     S.shardsTotal += gain;
     S.prestiges += 1;
@@ -677,11 +751,86 @@ const Engine = {
     S.nextDoctrine = engaged;   // reconduite par défaut, modifiable à tout moment
     this.computeStats();
 
+    /* Le défi armé prend effet maintenant, pour la fouille qui commence. */
+    S.challenge = S.nextChallenge || null;
+    S.challengeFailed = false;
+
+    Sfx.play('prestige');
     const dn = BY_ID.doctrine[engaged];
     logMsg('prestige', `Puits comblé. <b>+${fmt(gain)} éclats de mémoire</b>. ` +
       (engaged === 'aucune' ? 'Le chantier rouvre ailleurs.'
                             : `Nouvelle fouille sous doctrine <b>${dn.name}</b> — « ${dn.motto} »`), 0);
     UI.shopDirty = UI.wellDirty = UI.collectionDirty = true;
     return gain;
+  },
+
+  /* -----------------------------------------------------------------------
+     LES UNITÉS — seconde couche de prestige, ouverte par le Cœur.
+     ----------------------------------------------------------------------- */
+
+  /** Fragments que le départ rapporterait. Croît avec la profondeur record. */
+  fragmentsFor(depth) {
+    if (depth < HEART_DEPTH) return 0;
+    return Math.max(1, Math.floor(1 + (depth - HEART_DEPTH) / 120));
+  },
+
+  canLeaveUnit() {
+    return !!S.heartReached && S.maxDepth >= HEART_DEPTH;
+  },
+
+  /**
+   * Quitter cette graine pour une autre. Le reset le plus dur du jeu : éclats,
+   * mémoire gravée et doctrines disparaissent. Ne survivent que ce qui relève
+   * de la CONNAISSANCE (collection, succès, maîtrises, défis) et les fragments.
+   */
+  leaveUnit() {
+    if (!this.canLeaveUnit()) return false;
+    const gain = this.fragmentsFor(S.maxDepth);
+
+    S.fragments += gain;
+    S.fragmentsTotal += gain;
+    S.unitsLeft += 1;
+    /* Les unités sont numérotées 3 → 9 puis reviennent à 1 : neuf en tout. */
+    S.unit = (S.unit % 9) + 1;
+    S.unitTrait = pick(UNIT_TRAITS).id;
+
+    const keep = {};
+    if (S.fragmentsBought.f_pollen) keep.shards = 25;
+
+    /* Remise à zéro complète de la couche « mémoire ». */
+    Object.assign(S, newRun({}));
+    S.shards = keep.shards || 0;
+    S.shardsTotal = keep.shards || 0;
+    S.prestiges = 0;
+    S.meta = {};
+    S.doctrine = 'aucune';
+    S.nextDoctrine = 'aucune';
+    S.seenStrata = {};
+    S.heartReached = false;      // il faudra retoucher le Cœur de CETTE unité
+    S.research = {};             // y compris le Protocole : nouvelle planète, nouveau chantier
+
+    this.computeStats();
+    Sfx.play('unit');
+    const tr = BY_ID.trait[S.unitTrait];
+    logMsg('unit', `<b>UNITÉ ${S.unit} / 9</b> — +${gain} fragment(s). ` +
+      `Cette graine-ci : <b>${tr.name}</b>. ${tr.desc}`, 0);
+    UI.shopDirty = UI.wellDirty = UI.collectionDirty = UI.statsDirty = true;
+    return gain;
+  },
+
+  fragmentAvailable(f) {
+    if (S.fragmentsBought[f.id]) return false;
+    return f.req.every((q) => S.fragmentsBought[q]);
+  },
+
+  buyFragment(id) {
+    const f = BY_ID.fragment[id];
+    if (!f || !this.fragmentAvailable(f) || S.fragments < f.cost) return false;
+    S.fragments -= f.cost;
+    S.fragmentsBought[id] = true;
+    this.computeStats();
+    Sfx.play('research');
+    UI.shopDirty = true;
+    return true;
   },
 };

@@ -242,6 +242,13 @@ main > * { min-height: 0; }
 
 /* ---------- Aide ---------- */
 .hint-box { width: min(600px, 94vw); border-top: 3px solid var(--amber); }
+.hint-box.final {
+  border-top-color: var(--red);
+  background: linear-gradient(180deg, #241417, var(--bg-2) 55%);
+  box-shadow: 0 0 60px rgba(139,47,63,.35), 0 20px 60px rgba(0,0,0,.7);
+}
+.hint-box.final .hint-lab { color: #d4726a; }
+.hint-box.final h2 { color: #e08c84; }
 .hint-lab { font: 10px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--amber); }
 .hint-box h2 { margin: 3px 0 10px; }
 #hint-text { font-size: 14px; line-height: 1.7; color: #d5cabb; }
@@ -303,6 +310,56 @@ main > * { min-height: 0; }
 .db-lab { font: 9px var(--mono); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txt-dim); }
 .db-name { font-weight: 600; color: var(--c); }
 
+/* --------- Synergies, défis, unités, bilan --------- */
+.syn { color: var(--green); }
+
+#challenges, #units-box { margin-top: 20px; }
+#challenges h4, #units-box h4 { margin: 0 0 6px; font-size: 13px; color: var(--amber); }
+#challenge-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.chal {
+  padding: 10px 12px; cursor: pointer; user-select: none;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-left: 3px solid #6b3129; border-radius: var(--radius);
+}
+.chal:hover { background: var(--bg-3); }
+.chal.armed  { border-left-color: var(--red); box-shadow: inset 0 0 0 1px rgba(192,90,76,.35); }
+.chal.active { background: rgba(192,90,76,.10); }
+.chal.done   { border-left-color: var(--green); opacity: .7; cursor: default; }
+.chal-name { font-weight: 600; font-size: 14px; }
+.chal-depth { margin-left: auto; font: 11px var(--mono); color: var(--txt-dim); }
+.chal-rule { font-size: 12.5px; color: var(--txt-dim); margin: 4px 0; line-height: 1.5; }
+.chal-reward { font: 11.5px var(--mono); color: var(--amber); }
+.chal.done .chal-reward { color: var(--green); }
+
+#units-box {
+  padding: 14px; border: 1px solid #4a3a52; border-radius: var(--radius);
+  background: linear-gradient(180deg, #1d2026, #171518);
+}
+.unit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+.unit-grid div span { display: block; font: 700 20px var(--mono); color: #8fb8c9; }
+.unit-grid div small { font-size: 10.5px; color: var(--txt-dim); text-transform: uppercase; }
+.unit-trait { text-align: center; font-size: 13px; margin: 10px 0; color: #cfe0e8; }
+#units-box .big { width: 100%; margin-bottom: 12px; }
+.card.frag { border-left-color: #5a7f92; }
+.card.frag.afford { border-left-color: #8fb8c9; }
+.card.frag.afford .price { color: #8fb8c9; }
+
+.report-box { width: min(520px, 94vw); border-top: 3px solid var(--amber); }
+.report-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 4px; }
+.report-table td { padding: 6px 4px; border-bottom: 1px solid #241f1a; }
+.report-table td:first-child { color: var(--txt-dim); }
+.report-table td:last-child { text-align: right; font-family: var(--mono); }
+.report-gain {
+  margin-top: 14px; padding: 10px; text-align: center;
+  background: rgba(224,163,62,.10); border: 1px solid var(--amber-dk);
+  border-radius: var(--radius); font: 600 15px var(--mono); color: var(--amber);
+}
+.opt-sound { align-items: center; gap: 14px; }
+.opt-sound label { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.opt-sound input[type=range] { flex: 1; accent-color: var(--amber); }
+.le-defi { border-left-color: var(--green); color: #c4dab8; }
+.le-unit { border-left-color: #8fb8c9; color: #cfe0e8; background: rgba(143,184,201,.10); }
+
 /* --------- Stats & succès --------- */
 #stat-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
 #stat-table td { padding: 5px 8px; border-bottom: 1px solid #241f1a; }
@@ -349,6 +406,7 @@ main > * { min-height: 0; }
 .le-up       { border-left-color: #4d7fa8; }
 .le-event    { border-left-color: #c98a3a; color: #d9c5a6; }
 .le-doctrine { border-left-color: #4d9a8a; color: #bcd9d0; }
+.le-coeur    { border-left-color: var(--red); color: #e8c4be; background: rgba(139,47,63,.12); }
 
 /* =========================== SURCOUCHES =========================== */
 /* Placé en bas et non en haut : en haut il recouvrait la barre d'onglets,
@@ -466,7 +524,9 @@ main > * { min-height: 0; }
 [data-tip] { position: relative; }
 [data-tip]::after {
   content: attr(data-tip);
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 100;
+  /* z-index sous les fenêtres modales (90) : une infobulle ne doit jamais
+     passer par-dessus une question à laquelle le joueur doit répondre. */
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 85;
   width: 250px; padding: 9px 11px;
   background: #2b241d; border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0,0,0,.6);

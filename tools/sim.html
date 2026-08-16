@@ -18,6 +18,9 @@
 <script>
   const UI = new Proxy({}, { get: () => undefined, set: () => true });
   function toast() {}
+  /* Le banc d'essai n'a ni interface ni son : Sfx est une coquille vide.
+     Sans elle, le moteur plante dès qu'il veut jouer un bruit de bêche. */
+  const Sfx = { init() {}, setVolume() {}, play() {}, tone() {}, noise() {} };
 </script>
 
 <script src="../js/utils.js"></script>

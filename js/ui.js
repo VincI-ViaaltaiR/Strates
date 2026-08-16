@@ -146,6 +146,7 @@ UI.refreshWell = function () {
    ========================================================================= */
 UI.setTab = function (name) {
   UI.tab = S.tab = name;
+  if (name === 'aide') S.helpUnread = 0;   // consulter l'onglet éteint sa pastille
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   document.querySelectorAll('.tabpane').forEach((p) => p.classList.toggle('hidden', p.id !== 'pane-' + name));
   UI.shopDirty = UI.collectionDirty = UI.statsDirty = true;
@@ -203,9 +204,14 @@ UI.refreshTools = function () {
     r.owned.textContent = n;
     r.price.textContent = fmt(price) + ' σ';
     r.qty.textContent = qty > 1 ? '×' + qty : '';
-    r.each.textContent = n
-      ? `${fmt(t.prod * S.calc.toolMult[id] * S.calc.prodMult, 2)} σ/s chacun · total ${fmt(n * t.prod * S.calc.toolMult[id] * S.calc.prodMult)} σ/s`
-      : `${fmt(t.prod * S.calc.toolMult[id] * S.calc.prodMult, 2)} σ/s`;
+    const syn = (S.calc.synergy && S.calc.synergy[id]) || 1;
+    const each = t.prod * S.calc.toolMult[id] * syn * S.calc.prodMult;
+    r.each.innerHTML = (n
+      ? `${fmt(each, 2)} σ/s chacun · total ${fmt(n * each)} σ/s`
+      : `${fmt(each, 2)} σ/s`)
+      /* La synergie ne se voit nulle part ailleurs : si on ne l'affiche pas
+         ici, le joueur ne comprend pas pourquoi un vieil outil remonte. */
+      + (syn > 1.001 ? ` <span class="syn">↗ synergie ×${fmt(syn, 2)}</span>` : '');
     r.card.classList.toggle('afford', S.sediment >= price);
   }
 };
@@ -389,6 +395,13 @@ UI.refreshMeta = function () {
   const gain = Engine.shardsFor(S.maxDepth);
   const unlocked = S.calc.prestigeUnlocked || S.prestiges > 0;
 
+  /* Pastille sur l'onglet Mémoire tant qu'on n'a jamais comblé alors qu'on
+     le pourrait. C'est le cas qui a fait passer un joueur à côté du prestige
+     pendant 200 mètres : la mécanique était disponible, rien ne le signalait. */
+  const nudge = unlocked && S.prestiges === 0 && gain >= 1;
+  $('badge-memoire').textContent = nudge ? '!' : '';
+  $('badge-memoire').classList.toggle('hidden', !nudge);
+
   $('meta-locked').classList.toggle('hidden', unlocked);
   $('meta-body').classList.toggle('hidden', !unlocked);
   if (!unlocked) return;
@@ -479,10 +492,90 @@ UI.refreshDoctrineBadge = function () {
   badge.innerHTML = `<span class="db-lab">doctrine</span><span class="db-name">${d.name}</span>`;
 };
 
+/* ---- 3e quater. DÉFIS & UNITÉS ------------------------------------------ */
+UI.buildChallenges = function () {
+  const box = $('challenge-list');
+  if (!box) return;
+  box.innerHTML = '';
+  CHALLENGES.forEach((ch) => {
+    const done = !!S.challengesDone[ch.id];
+    const armed = S.nextChallenge === ch.id;
+    const active = S.challenge === ch.id;
+    const card = el('div', 'chal' + (done ? ' done' : '') + (armed ? ' armed' : '') + (active ? ' active' : ''));
+    card.innerHTML = `
+      <div class="dc-head">
+        <span class="chal-name">${ch.name}</span>
+        ${done ? '<span class="dc-tag">relevé</span>' : ''}
+        ${active && !done ? '<span class="dc-tag next">en cours</span>' : ''}
+        ${armed && !active ? '<span class="dc-tag next">armé</span>' : ''}
+        <span class="chal-depth">${ch.depth} m</span>
+      </div>
+      <div class="chal-rule">${ch.rule}</div>
+      <div class="chal-reward">${done ? '✓ ' : ''}${ch.reward}</div>`;
+    if (!done) card.onclick = () => {
+      S.nextChallenge = (S.nextChallenge === ch.id) ? null : ch.id;
+      UI.shopDirty = true;
+      toast(S.nextChallenge ? 'Défi armé : ' + ch.name : 'Défi désarmé.');
+    };
+    box.appendChild(card);
+  });
+};
+
+UI.buildUnits = function () {
+  const box = $('fragment-list');
+  if (!box) return;
+  box.innerHTML = '';
+  FRAGMENTS.forEach((f) => {
+    const done = !!S.fragmentsBought[f.id];
+    const open = Engine.fragmentAvailable(f);
+    if (!done && !open && !f.req.every((q) => S.fragmentsBought[q] || BY_ID.fragment[q])) return;
+    const card = el('div', 'card frag' + (done ? ' done' : '') + (!open && !done ? ' locked' : ''));
+    card.innerHTML = `
+      <div class="card-main">
+        <div class="card-title">${f.name}${done ? ' <span class="chk">✓</span>' : ''}</div>
+        <div class="card-desc">${f.desc}</div>
+        ${done || open ? '' : `<div class="card-sub">Requiert : ${f.req.map((q) => BY_ID.fragment[q].name).join(', ')}</div>`}
+      </div>
+      ${done ? '' : `<div class="card-buy"><div class="price">${f.cost} ✧</div></div>`}`;
+    if (!done && open) card.onclick = () => {
+      if (Engine.buyFragment(f.id)) { UI.pop(card); UI.shopDirty = true; }
+    };
+    box.appendChild(card);
+  });
+};
+
+UI.refreshUnits = function () {
+  const box = $('units-box');
+  if (!box) return;
+  const can = Engine.canLeaveUnit();
+  const known = can || S.unitsLeft > 0;
+  box.classList.toggle('hidden', !known);
+  if (!known) return;
+
+  const gain = Engine.fragmentsFor(S.maxDepth);
+  $('unit-num').textContent = S.unit;
+  $('unit-frag').textContent = fmtInt(S.fragments);
+  $('unit-left').textContent = fmtInt(S.unitsLeft);
+  const tr = S.unitTrait && BY_ID.trait[S.unitTrait];
+  $('unit-trait').innerHTML = tr
+    ? `<b>${tr.name}</b> — ${tr.desc}`
+    : `<i>Unité d'origine : aucun trait particulier.</i>`;
+  const btn = $('btn-leave');
+  btn.disabled = !can;
+  btn.textContent = can ? `Partir vers une autre unité — +${gain} ✧` : `Touchez le Cœur (${HEART_DEPTH} m) pour pouvoir partir`;
+};
+
 /* ---- 3e ter. AIDE -------------------------------------------------------- */
 UI.showHintModal = function (h) {
   $('hint-title').textContent = h.title;
   $('hint-text').innerHTML = h.text;
+  /* L'aboutissement du Cœur mérite un traitement distinct : ce n'est pas une
+     explication de mécanique, c'est le paiement de tout le récit. */
+  const box = $('modal-hint').querySelector('.hint-box');
+  box.classList.toggle('final', !!h.final);
+  box.querySelector('.hint-lab').textContent = h.final
+    ? 'Cinq cents mètres' : 'Nouveau dans votre chantier';
+  $('hint-ok').textContent = h.final ? 'Continuer à creuser' : 'Compris';
   $('modal-hint').classList.remove('hidden');
   UI.hintOpen = true;
 };
@@ -558,6 +651,11 @@ UI.refreshLog = function () {
      doublons) : on la réécrit systématiquement, ça ne coûte qu'une ligne. */
   if (box.firstChild && S.log.length) box.firstChild.innerHTML = inner(S.log[0]);
   UI._lastLogK = S.log.length ? (S.log[0].k || 0) : 0;
+};
+
+/** Une fenêtre modale est-elle actuellement visible ? */
+UI.anyModalOpen = function () {
+  return !!document.querySelector('.modal:not(.hidden)');
 };
 
 /* =========================================================================
@@ -666,7 +764,7 @@ UI.floatGain = function (x, y, txt) {
 UI.render = function () {
   if (UI.shopDirty) {
     UI.buildTools(); UI.buildUpgrades(); UI.buildResearch(); UI.buildMeta();
-    UI.buildDoctrines();
+    UI.buildDoctrines(); UI.buildChallenges(); UI.buildUnits();
     UI.shopDirty = false;
   }
   /* Le puits ne se reconstruit que si sa STRUCTURE change (nouvelle strate
@@ -681,8 +779,20 @@ UI.render = function () {
   if (UI.statsDirty)      { UI.buildStats(); UI.buildHelp(); UI.statsDirty = false; }
   if (UI.logDirty)        { UI.refreshLog(); UI.logDirty = false; }
   if (UI.flashArtefact)   { UI.showArtefactFlash(UI.flashArtefact); UI.flashArtefact = null; }
-  if (UI.showEvent)       { UI.showEventModal(UI.showEvent); UI.showEvent = null; }
-  if (UI.showHint)        { UI.showHintModal(UI.showHint); UI.showHint = null; UI.statsDirty = true; }
+  /* Les fenêtres ne s'empilent JAMAIS : un événement qui s'ouvrirait par-dessus
+     le bilan de fouille masquerait les deux. Tant qu'une modale est visible, la
+     suivante reste en attente — elle n'est pas consommée, donc elle ressortira
+     d'elle-même à l'image suivante. */
+  if (!UI.anyModalOpen()) {
+    if (UI.showEvent)     { UI.showEventModal(UI.showEvent); UI.showEvent = null; }
+    else if (UI.showHint) { UI.showHintModal(UI.showHint); UI.showHint = null; UI.statsDirty = true; }
+  }
+
+  /* Pastille « nouvelle aide disponible » : l'explication passe dans une
+     fenêtre qu'on ferme vite, il faut pouvoir la retrouver sans la chercher. */
+  const unread = S.helpUnread | 0;
+  $('badge-aide').textContent = unread || '';
+  $('badge-aide').classList.toggle('hidden', !unread);
 
   UI.refreshHeader();
   UI.refreshWell();
@@ -692,5 +802,6 @@ UI.render = function () {
   UI.refreshUpgrades();
   UI.refreshResearch();
   UI.refreshMeta();
+  UI.refreshUnits();
   if (UI.tab === 'stats') UI.refreshStats();
 };

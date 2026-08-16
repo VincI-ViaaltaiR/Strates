@@ -23,7 +23,7 @@
    version ? ». À incrémenter en même temps que le `?v=` des balises
    <script>/<link> de index.html, qui force le navigateur à recharger les
    fichiers au lieu de resservir ceux qu'il a en cache. */
-const VERSION = '1.3.0';
+const VERSION = '2.0.0';
 
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
@@ -120,6 +120,39 @@ const TOOLS = [
   { id: 'resonateur',name:'Résonateur sismique',     cost: 7.5e10, prod: 1.6e6,  unlock: 228, desc: "La roche se désagrège d'elle-même, par accord." },
   { id: 'desintegrateur', name: 'Désintégrateur',    cost: 1.0e12, prod: 1.0e7,  unlock: 298, desc: "Retire la matière de l'équation. Ne pas regarder dedans." },
   { id: 'faille',   name: 'Faille gravitationnelle',cost: 1.4e13, prod: 6.5e7,  unlock: 378, desc: "Le puits se creuse en tombant vers lui-même." },
+];
+
+/* -------------------------------------------------------------------------
+   SYNERGIES D'OUTILLAGE
+
+   PROBLÈME RÉSOLU : acheter était une opération sans décision. Le meilleur
+   ratio production/prix gagnait toujours, et l'onglet Outils se jouait tout
+   seul. Chaque outil reçoit désormais un bonus des exemplaires d'un AUTRE
+   outil, plus avancé — un tunnelier ne sert à rien sans les pompes qui
+   assèchent devant lui.
+
+   Conséquence de jeu : entretenir un outil « dépassé » redevient rentable, et
+   monter le dernier outil sorti n'est plus systématiquement le bon coup.
+
+   CALIBRAGE — le piège du pourcentage par exemplaire : en fin de partie on
+   possède ~200 exemplaires d'un outil. À 2 % l'unité, la synergie valait ×5 et
+   le banc d'essai a mesuré +18 % de profondeur, ce qui déformait toute la
+   courbe. Les taux ci-dessous plafonnent autour de ×2 à 200 exemplaires :
+   assez pour peser sur les décisions d'achat, trop peu pour les dicter.
+   Règle : viser `pct × 200 ≈ 1`, jamais davantage.
+   ------------------------------------------------------------------------- */
+const SYNERGIES = [
+  { tool: 'mains',    from: 'pelle',      pct: 0.007, text: "Chaque Pelle guide deux mains de plus." },
+  { tool: 'pelle',    from: 'pioche',     pct: 0.005, text: "Les Pioches ouvrent la voie aux Pelles." },
+  { tool: 'pioche',   from: 'ouvrier',    pct: 0.005, text: "Une Équipe fait tourner les Pioches sans pause." },
+  { tool: 'ouvrier',  from: 'treuil',     pct: 0.004, text: "Les Treuils évacuent, les Équipes creusent." },
+  { tool: 'treuil',   from: 'foreuse',    pct: 0.004, text: "Les Foreuses alimentent les Treuils en débit." },
+  { tool: 'foreuse',  from: 'pompe',      pct: 0.003, text: "Les Pompes tiennent les Foreuses au sec." },
+  { tool: 'pompe',    from: 'tunnelier',  pct: 0.003, text: "Le Tunnelier ouvre les galeries de pompage." },
+  { tool: 'tunnelier',from: 'sonde',      pct: 0.0025,text: "Les Sondes ramollissent la roche devant le Tunnelier." },
+  { tool: 'sonde',    from: 'resonateur', pct: 0.0025,text: "Le Résonateur fissure ce que les Sondes fondent." },
+  { tool: 'resonateur',from:'desintegrateur',pct:0.002,text:"Le Désintégrateur nettoie derrière le Résonateur." },
+  { tool: 'desintegrateur',from:'faille', pct: 0.002, text: "La Faille aspire ce que le Désintégrateur libère." },
 ];
 
 /* -------------------------------------------------------------------------
@@ -403,9 +436,9 @@ const DOCTRINES = [
   {
     id: 'archeologie', name: 'Archéologie', color: '#9a7fc0',
     motto: "Le puits n'est qu'un moyen.",
-    desc: "<b>Chance d'artefact ×2,6</b> et savoir ×1,8 — mais production ×0,6 et descente <b>2,2× plus chère</b>. " +
+    desc: "<b>Chance d'artefact ×2,6</b> et savoir ×1,8 — mais production ×0,6 et descente <b>2,8× plus chère</b>. " +
           "<i>La fouille qui remplit la collection et l'arbre de recherche, au prix de la profondeur.</i>",
-    fx: { artefactChanceMult: 2.6, knowledgeMult: 1.8, prodMult: 0.6, digCostMult: 2.2 },
+    fx: { artefactChanceMult: 2.6, knowledgeMult: 1.8, prodMult: 0.6, digCostMult: 2.8 },
     mastery: { name: 'Œil exercé', desc: "Chance d'artefact ×1,3, définitivement.", fx: { artefactChanceMult: 1.3 } },
   },
   {
@@ -421,6 +454,103 @@ const DOCTRINES = [
 
 /** Nombre de fouilles sous une même doctrine avant d'en obtenir la maîtrise. */
 const MASTERY_RUNS = 3;
+
+/* -------------------------------------------------------------------------
+   LE CŒUR — l'aboutissement narratif.
+
+   Le Cœur s'ouvre à 470 m, mais on ne le TOUCHE qu'à 500 m. Jusqu'ici il ne
+   se passait rien : la dernière strate se prolongeait à l'infini et tout le
+   récit — la cité sous le socle, la paroi poncée, « UNITÉ 3 / 9 », le neuvième
+   alphabet, la Graine pas finie de pousser — ne débouchait sur rien.
+
+   Ce qui se passe désormais à 500 m est une RÉVÉLATION, pas une fin de partie :
+   le puits continue ensuite sans limite. Un incrémental ne se termine pas, mais
+   il doit pouvoir aboutir.
+   ------------------------------------------------------------------------- */
+const HEART_DEPTH = 500;
+
+/** Bonus permanent accordé une fois le Cœur touché. Survit à tout. */
+const HEART_BONUS = { prodMult: 1.25, shardMult: 1.25 };
+
+/* -------------------------------------------------------------------------
+   DÉFIS DE FOUILLE — mener une fouille entière sous une contrainte, pour un
+   bonus définitif. Emprunté aux « challenges » d'Antimatter Dimensions.
+
+   Un défi s'arme AVANT de combler et vaut pour toute la fouille suivante ; on
+   le valide en atteignant la profondeur demandée sans jamais violer sa règle.
+   Contrairement aux doctrines, ce n'est pas un arbitrage mais une privation
+   sèche : le jeu redevient difficile là où l'on croyait avoir tout automatisé.
+   ------------------------------------------------------------------------- */
+const CHALLENGES = [
+  {
+    id: 'c_manuel', name: 'À la main', depth: 120,
+    rule: "La descente automatique est coupée : chaque mètre se déclenche à la main.",
+    reward: "Production ×1,4, définitivement.", fx: { prodMult: 1.4 },
+  },
+  {
+    id: 'c_aveugle', name: 'Fouille aveugle', depth: 150,
+    rule: "Aucun artefact n'est trouvé, donc aucun savoir : pas une seule recherche de la fouille.",
+    reward: "Coût de descente ×0,85, définitivement.", fx: { digCostMult: 0.85 },
+  },
+  {
+    id: 'c_pauvre', name: 'Outillage réduit', depth: 130,
+    rule: "Les quatre derniers outils restent introuvables, quelle que soit la profondeur.",
+    reward: "Chance d'artefact ×1,25, définitivement.", fx: { artefactChanceMult: 1.25 },
+  },
+  {
+    id: 'c_silence', name: 'Chantier muet', depth: 180,
+    rule: "Aucun événement de forage : personne ne vous propose rien, personne ne vous aide.",
+    reward: "Éclats du comblement ×1,3, définitivement.", fx: { shardMult: 1.3 },
+  },
+];
+
+/* -------------------------------------------------------------------------
+   LES NEUF UNITÉS — la seconde couche de prestige.
+
+   Le récit l'appelait depuis le début : « UNITÉ 3 / 9 », « reste à savoir où
+   sont les huit autres ». Une fois le Cœur touché, on peut PARTIR — abandonner
+   cette graine pour une autre.
+
+   C'est le reset le plus dur du jeu : éclats, mémoire gravée, doctrines
+   engagées, tout disparaît. Ne survivent que la collection d'artefacts, les
+   succès, les maîtrises, les défis validés — et les FRAGMENTS D'UNITÉ, la
+   monnaie de cette couche, dont les bonus dépassent de loin ceux de la mémoire.
+
+   Chaque unité tire un TRAIT qui change la forme de la planète : on ne rejoue
+   jamais tout à fait la même partie.
+   ------------------------------------------------------------------------- */
+const UNIT_TRAITS = [
+  { id: 't_tendre',  name: 'Roche tendre',        desc: "Coût de descente ×0,7 — mais artefacts ×0,8.",
+    fx: { digCostMult: 0.7, artefactChanceMult: 0.8 } },
+  { id: 't_riche',   name: 'Sédiment riche',      desc: "Production ×1,8 — mais descente ×1,25.",
+    fx: { prodMult: 1.8, digCostMult: 1.25 } },
+  { id: 't_necropole',name: 'Nécropole',          desc: "Artefacts ×1,9 et savoir ×1,5 — mais production ×0,75.",
+    fx: { artefactChanceMult: 1.9, knowledgeMult: 1.5, prodMult: 0.75 } },
+  { id: 't_dense',   name: 'Croûte dense',        desc: "Descente ×1,6 — mais éclats ×1,8.",
+    fx: { digCostMult: 1.6, shardMult: 1.8 } },
+  { id: 't_ancienne',name: 'Unité ancienne',      desc: "Savoir ×2,2 — mais outils ×1,3 plus chers.",
+    fx: { knowledgeMult: 2.2, toolCostMult: 1.3 } },
+  { id: 't_jeune',   name: 'Unité jeune',         desc: "Outils ×0,75 — mais savoir ×0,7.",
+    fx: { toolCostMult: 0.75, knowledgeMult: 0.7 } },
+];
+
+/** Bonus permanents achetés avec les Fragments d'unité. Survivent au départ. */
+const FRAGMENTS = [
+  { id: 'f_semence',  name: 'Semence',        cost: 1,  req: [],
+    desc: "Production ×2 sur toutes les unités." , fx: { prodMult: 2 } },
+  { id: 'f_racine',   name: 'Racine profonde', cost: 2, req: ['f_semence'],
+    desc: "Coût de descente ×0,75 partout.", fx: { digCostMult: 0.75 } },
+  { id: 'f_greffe',   name: 'Greffe',          cost: 3, req: ['f_semence'],
+    desc: "Chance d'artefact ×1,5 partout.", fx: { artefactChanceMult: 1.5 } },
+  { id: 'f_seve',     name: 'Sève',            cost: 5, req: ['f_racine'],
+    desc: "Savoir ×2,5 partout.", fx: { knowledgeMult: 2.5 } },
+  { id: 'f_floraison',name: 'Floraison',       cost: 8, req: ['f_greffe', 'f_seve'],
+    desc: "Production ×5 et éclats ×2 partout.", fx: { prodMult: 5, shardMult: 2 } },
+  { id: 'f_pollen',   name: 'Pollen',          cost: 12, req: ['f_floraison'],
+    desc: "Vous commencez chaque unité avec 25 éclats de mémoire.", fx: {} },
+  { id: 'f_verger',   name: 'Verger',          cost: 20, req: ['f_pollen'],
+    desc: "Production ×12 et coût de descente ×0,6 partout.", fx: { prodMult: 12, digCostMult: 0.6 } },
+];
 
 /* -------------------------------------------------------------------------
    MÉTA — achetée avec des Éclats de mémoire. SURVIT AU COMBLEMENT.
@@ -685,6 +815,8 @@ const ACHIEVEMENTS = [
   { id: 'a_d230',    name: 'Écouter le silence',    desc: "Atteindre le Grand Silence.",    check: (S) => S.maxDepth >= 230 },
   { id: 'a_d300',    name: 'Ça tourne encore',      desc: "Atteindre la Machinerie.",       check: (S) => S.maxDepth >= 300 },
   { id: 'a_d470',    name: 'Le Cœur',               desc: "Atteindre 470 m.",               check: (S) => S.maxDepth >= 470 },
+  { id: 'a_graine',  name: 'La Graine',             desc: "Toucher le Cœur, à 500 m.",      check: (S) => !!S.heartReached },
+  { id: 'a_d700',    name: 'Il n\'y a pas de fond', desc: "Atteindre 700 m.",               check: (S) => S.maxDepth >= 700 },
   { id: 'a_tool50',  name: 'Petite entreprise',     desc: "Posséder 50 outils au total.",   check: (S) => totalTools(S) >= 50 },
   { id: 'a_tool250', name: 'Chantier national',     desc: "Posséder 250 outils au total.",  check: (S) => totalTools(S) >= 250 },
   { id: 'a_tool1000',name: 'Industrie',             desc: "Posséder 1000 outils au total.", check: (S) => totalTools(S) >= 1000 },
@@ -732,6 +864,18 @@ const HINTS = [
       Descendre révèle de <b>nouvelles strates</b> — chacune avec ses propres artefacts, ses
       propres textes, et une roche plus dure. La colonne de gauche affiche <i>? ? ?</i> pour
       celle qui vient : vous ne saurez ce qu'il y a en dessous qu'en y allant.`,
+  },
+  {
+    /* NB : l'ordre de ce tableau est CHRONOLOGIQUE, pas thématique. C'est lui
+       qui détermine l'ordre de lecture dans l'onglet Aide ; une entrée de fin
+       de partie placée au milieu y ferait un saut de récit. */
+    id: 'h_events', title: 'Le puits pose des questions',
+    when: (S) => S.maxDepth >= 8,
+    text: `De temps en temps, le forage rencontre quelque chose et vous demande de trancher.
+      Chaque option affiche ses <b>conséquences chiffrées</b> sur votre situation du moment :
+      c'est là-dessus qu'il faut décider, pas sur la formulation.<br><br>
+      Aucune réponse n'est la bonne dans l'absolu — on échange toujours une chose contre une
+      autre. Certains choix sont des paris, et affichent leurs probabilités.`,
   },
   {
     id: 'h_artefact', title: 'Les artefacts ne se perdent jamais',
@@ -801,13 +945,24 @@ const HINTS = [
       vous pouvez laisser Strates dans un onglet et vaquer à autre chose.`,
   },
   {
-    id: 'h_events', title: 'Le puits pose des questions',
-    when: (S) => S.maxDepth >= 8,
-    text: `De temps en temps, le forage rencontre quelque chose et vous demande de trancher.
-      Chaque option affiche ses <b>conséquences chiffrées</b> sur votre situation du moment :
-      c'est là-dessus qu'il faut décider, pas sur la formulation.<br><br>
-      Aucune réponse n'est la bonne dans l'absolu — on échange toujours une chose contre une
-      autre. Certains choix sont des paris, et affichent leurs probabilités.`,
+    id: 'h_coeur', title: 'Le Cœur', final: true,
+    when: (S) => S.maxDepth >= HEART_DEPTH,
+    text: `Le trépan ne rencontre plus de résistance. La cavité fait douze mètres, elle est
+      parfaitement sphérique, et elle est <b>tiède</b>.<br><br>
+      Au centre flotte quelque chose de petit. Ça bat toutes les 11,3 secondes — exactement
+      le rythme auquel vous creusez depuis le premier jour, sans l'avoir jamais remarqué.<br><br>
+      Sur la coque interne, un numéro de série et deux mots : <b>UNITÉ 3 / 9</b>.<br><br>
+      Vous comprenez enfin ce que vous déterrez depuis le début. Ce n'est pas un monde : c'est
+      une <b>graine</b>, et elle n'a pas fini de pousser. La cité noyée, la paroi poncée, les
+      engrenages qui tournent encore — de l'outillage. Quelqu'un a planté ceci, il y a
+      longtemps, et a laissé neuf exemplaires quelque part.<br><br>
+      La note manuscrite disait « <i>Ne pas s'arrêter au Cœur</i> ». Elle était de votre
+      écriture. Vous ne l'aviez pas encore écrite.<br><br>
+      <b>Vous emportez la Graine.</b> Production ×1,25 et éclats ×1,25, définitivement, pour
+      toutes vos fouilles — celle-ci comme les suivantes.<br><br>
+      Le puits, lui, continue. Il n'y a pas de fond : chaque mètre coûte toujours 7,5 % de
+      plus que le précédent, et il en restera toujours un de plus. Ce que vous cherchiez,
+      vous l'avez trouvé. Reste à savoir où sont les huit autres.`,
   },
 ];
 
@@ -827,6 +982,9 @@ const BY_ID = {
   strata:   Object.fromEntries(STRATA.map((s) => [s.id, s])),
   event:    Object.fromEntries(EVENTS.map((e) => [e.id, e])),
   doctrine: Object.fromEntries(DOCTRINES.map((d) => [d.id, d])),
+  challenge: Object.fromEntries(CHALLENGES.map((c) => [c.id, c])),
+  trait:    Object.fromEntries(UNIT_TRAITS.map((t) => [t.id, t])),
+  fragment: Object.fromEntries(FRAGMENTS.map((f) => [f.id, f])),
   upgrade:  Object.fromEntries(UPGRADES.concat(GLOBAL_UPGRADES).map((u) => [u.id, u])),
 };
 
