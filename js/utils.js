@@ -109,6 +109,19 @@ function el(tag, cls, html) {
   return e;
 }
 
+/**
+ * Écrit du HTML dans un élément SEULEMENT s'il a changé.
+ * POURQUOI : plusieurs panneaux sont rafraîchis à chaque image (60 fps).
+ * Réécrire `innerHTML` à l'identique force quand même le navigateur à
+ * détruire puis recréer les éléments — du travail pour rien, et un survol
+ * ou une sélection de texte qui sautent. Comparer deux chaînes ne coûte rien.
+ */
+function setHTML(node, html) {
+  if (node._html === html) return;
+  node._html = html;
+  node.innerHTML = html;
+}
+
 /** Tirage aléatoire dans un tableau. */
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];

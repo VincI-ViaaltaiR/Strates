@@ -72,8 +72,14 @@ pause arrête d'abord le chantier, *puis* l'équipe reposée produit mieux —
 simultanés, les deux se neutralisaient et la scène n'avait plus de sens.
 
 Ils devraient **rythmer sans accélérer**. Le groupe témoin du banc d'essai
-mesure aujourd'hui **+11 % de profondeur en 8 h** (25 parties) : ce n'est pas
-neutre, et c'est un réglage à reprendre. La mesure a longtemps sauté de +2 % à
+mesure **+8 % de profondeur en 8 h** (25 parties, v2.1.1), soit pile le seuil
+au-delà duquel le banc signale un écart : c'est acceptable, mais sans marge.
+
+Les mesures antérieures (+11 %, +13 %, +21 %) étaient faussées : le joueur
+simulé dépensait tout en outils et n'atteignait jamais la réserve exigée par la
+descente « prudente ». Il restait bloqué au mur des 230 m (entrée du Grand
+Silence), et les mètres gratuits des événements le lui faisaient franchir. On
+attribuait donc aux événements l'effet d'une faiblesse du bot. La mesure a longtemps sauté de +2 % à
 +22 % d'une exécution à l'autre, parce que 12 parties ne suffisaient pas — la
 série avec événements est bien plus dispersée que le témoin. À 25 parties, le
 chiffre se stabilise et le verdict est clair.
@@ -129,7 +135,7 @@ Elle donne beaucoup dans un domaine et retire dans un autre :
 | Doctrine | Vise | Donne | Coûte |
 |---|---|---|---|
 | **Ingénierie** | les éclats | éclats ×1,7, production ×3 | artefacts ×0,4, savoir ×0,5 |
-| **Archéologie** | le savoir | artefacts ×2,6, savoir ×1,8 | production ×0,6, descente ×2,2 |
+| **Archéologie** | le savoir | artefacts ×2,6, savoir ×1,8 | production ×0,6, descente ×2,8 |
 | **Spéléologie** | la profondeur | descente ×0,15 | outils ×1,3, savoir ×0,85, artefacts ×0,7 |
 
 Mener **3 fouilles** sous une même doctrine en acquiert la **maîtrise** : un
@@ -184,7 +190,7 @@ il doit pouvoir aboutir : la différence entre les deux est tout le sujet. Deux
 succès accompagnent le passage — *La Graine* (500 m) et *Il n'y a pas de fond*
 (700 m).
 
-Compter trois à quatre fouilles pour y parvenir.
+Compter deux à trois fouilles pour un joueur attentif (mesure du banc d'essai).
 
 </details>
 
@@ -217,7 +223,7 @@ redevient difficile là où l'on croyait avoir tout automatisé.
 
 Une fois le Cœur touché, on peut **partir** : abandonner cette graine pour une
 autre. On perd la mémoire gravée, les doctrines et les recherches ; on garde la
-collection, les succès, les maîtrises, les défis relevés, **30 % des éclats
+collection, les succès, les maîtrises, les défis relevés, la Graine, **30 % des éclats
 gagnés à vie** — et on emporte des **fragments d'unité**.
 
 Chaque unité tire un **trait** (roche tendre, nécropole, croûte dense…) qui
@@ -301,13 +307,14 @@ au changement de strate créent les murs qui motivent l'investissement.
 
 ## Architecture
 
-Six fichiers, une responsabilité chacun, chargés dans cet ordre :
+Sept fichiers, une responsabilité chacun, chargés dans cet ordre :
 
 | Fichier | Rôle | Ne connaît pas |
 |---|---|---|
 | [`js/utils.js`](js/utils.js) | formatage des grands nombres, sommes géométriques, helpers DOM | le jeu |
 | [`js/content.js`](js/content.js) | **toutes les données** : strates, outils, améliorations, recherches, artefacts, méta, succès | la logique |
 | [`js/state.js`](js/state.js) | l'état `S`, sauvegarde/chargement, export/import, journal | l'affichage |
+| [`js/audio.js`](js/audio.js) | sons synthétisés (Web Audio) | les règles |
 | [`js/engine.js`](js/engine.js) | calculs, achats, descente, tick, hors-ligne, prestige | **le DOM** |
 | [`js/ui.js`](js/ui.js) | tout le rendu DOM | les règles |
 | [`js/main.js`](js/main.js) | démarrage, boucle, contrôles clavier/souris | — |
@@ -350,7 +357,7 @@ gardées en mémoire.
 ### Banc d'essai — `tools/sim.html`
 
 Double-cliquez dessus. Il fait jouer un joueur automatique sur **25 parties** de
-8 h chacune, avant et après un comblement (le tout en ~12 secondes), puis
+8 h chacune, avant et après un comblement (le tout en ~16 secondes), puis
 affiche :
 
 - les jalons de profondeur, en **médiane [minimum – maximum]** ;
@@ -360,6 +367,13 @@ affiche :
   éclats), pour vérifier qu'aucune ne domine toutes les colonnes ;
 - l'état détaillé de la dernière partie et la courbe des coûts du puits ;
 - une vingtaine de contrôles de cohérence des données.
+
+**Le joueur simulé pousse quand le mètre suivant coûte moins de 120 s de
+production** (constante `PUSH_SEC`), et investit sinon. Sans cette règle, il
+dépensait tout en outils et restait bloqué au premier mur de dureté : toutes
+les mesures étaient fausses. Leçon : un banc d'essai ne vaut que ce que vaut
+son joueur, et il faut vérifier *où* il plafonne avant de croire ce qu'il
+mesure.
 
 **Pourquoi 25 parties et pas une seule.** Le jeu contient beaucoup de hasard :
 sur une partie unique, la profondeur atteinte en 8 h varie de 230 à 300 m — un
@@ -400,8 +414,9 @@ risque d'écraser sa progression.
 
 10 strates (0 → 470 m) · 12 outils · 58 améliorations · 18 recherches
 **+ 3 répétables sans limite** · 31 artefacts · 15 événements de forage ·
-4 doctrines avec leurs maîtrises · 10 nœuds de mémoire · 22 succès ·
-10 aides contextuelles · un aboutissement à 500 m.
+4 doctrines avec leurs maîtrises · 10 nœuds de mémoire · 4 défis ·
+6 natures d'unité · 7 fragments · 22 succès · 10 aides contextuelles ·
+un aboutissement à 500 m.
 
 ### Migrations de sauvegarde
 
@@ -412,29 +427,39 @@ principe vaut pour la suite — **corriger l'état au chargement plutôt que de
 compter sur le prochain passage dans le code concerné**, sinon le correctif ne
 touche que les nouvelles parties.
 
-Profil mesuré des doctrines (médiane sur 5 parties de 8 h, sans éclats) :
+Profil mesuré des doctrines (médiane sur 5 parties de 8 h, sans éclats, v2.1.1) :
 
 | | profondeur | artefacts | recherches | éclats |
 |---|---|---|---|---|
-| Aucune | 246 m | 20 | 15 | 11 |
-| Ingénierie | 294 m | 18 | 14 | **25** |
-| Archéologie | 271 m | **22** | **18** | 13 |
-| Spéléologie | **294 m** | 19 | 15 | 15 |
+| Aucune | 442 m | 26 | 21 | 27 |
+| Ingénierie | 381 m | 21 | 17 | **37** |
+| Archéologie | 419 m | **28** | 21 | 25 |
+| Spéléologie | **470 m** | 27 | 21 | 30 |
 
-Repères mesurés au banc d'essai — **médiane sur 7 parties**, jeu actif, sans
-temps hors-ligne :
+Chaque doctrine domine bien sa colonne. La colonne « recherches » ne départage
+plus personne : avec un joueur efficace, les 21 recherches sont toutes
+terminées en 8 h.
+
+Repères mesurés au banc d'essai — **médiane sur 25 parties**, jeu actif, sans
+temps hors-ligne (v2.1.1) :
 
 | | 1re fouille | après 1 comblement |
 |---|---|---|
-| 50 m | 26 min | 7 min |
-| 100 m | 1 h 31 | 22 min |
-| 170 m — *La Cité Noyée* | 3 h 43 | 1 h 04 |
-| 230 m — *Le Grand Silence* | 6 h 52 | 2 h 14 |
-| 380 m — *Le Réseau* | — | 5 h 53 |
-| profondeur après 8 h | 240 m | 392 m |
+| 50 m | 16 min | 2 min |
+| 100 m | 43 min | 5 min |
+| 170 m — *La Cité Noyée* | 2 h 02 | 10 min |
+| 230 m — *Le Grand Silence* | 3 h 55 | 22 min |
+| 380 m — *Le Réseau* | 6 h 33 | 35 min |
+| 470 m — *Le Cœur* | — | 1 h 35 |
+| profondeur après 8 h | 441 m | 484 m |
 
-Le Cœur (470 m) demande une troisième fouille. Le comblement s'ouvre dans
-**7 parties sur 7**, vers 200 m.
+Le comblement s'ouvre dans **25 parties sur 25**. Le Cœur (500 m) se touche en
+deuxième ou troisième fouille.
+
+⚠️ Ces chiffres sont deux fois plus rapides que ceux des versions précédentes :
+ce n'est pas le jeu qui a changé, c'est le joueur simulé qui joue enfin comme
+un joueur attentif (alterner investissement et poussée). Un joueur moins
+assidu restera plus lent.
 
 Ces chiffres bougent d'une exécution à l'autre : la dispersion entre parties
 est de l'ordre de ±10 %. Ne conclure à un changement d'équilibrage qu'au-delà.
@@ -493,11 +518,9 @@ précisément ce que l'URL évite.
 
 ## Pistes pour la suite
 
-- **Reprendre le réglage des événements** — ils accélèrent de +13 %, mesuré sur
-  25 parties. À traiter en durcissant les ralentissements, puis en re-mesurant.
-- **Défis de fouille** — rejouer avec un handicap (sans descente auto, sans
-  artefacts) pour un bonus permanent, à la manière d'Antimatter Dimensions
-- **Une aide sur les doctrines dans le panneau lui-même** — l'aide contextuelle
-  ne se déclenche qu'après le premier comblement
-- Un deuxième axe de prestige au-delà du Cœur
-- Sons et musique d'ambiance
+- **Redonner de la marge aux événements** : +8 %, pile au seuil.
+- **Redonner du poids au savoir en fin de fouille** : un joueur attentif
+  termine les 21 recherches en 8 h, et la colonne « recherches » du profil des
+  doctrines ne départage plus rien.
+- **Réévaluer le rythme général** : les nouvelles mesures montrent un jeu deux
+  fois plus rapide que prévu pour un joueur efficace.

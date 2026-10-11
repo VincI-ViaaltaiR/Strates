@@ -29,14 +29,17 @@ function newRun(keep = {}) {
     /* --- Événements de forage --- */
     buffs: [],            // effets temporaires actifs : [{ name, until, prodMult… }]
     pendingEvent: null,   // id de l'événement en attente de réponse (survit au rechargement)
-    nextEventAt: 0,       // horodatage : pas de nouvel événement avant
+    nextEventAt: 0,       // en temps de jeu (S.playTime) : pas de nouvel événement avant
 
-    /* --- Défi armé pour cette fouille --- */
-    challenge: keep.challenge || null,   // id du défi en cours, ou null
-    challengeFailed: false,              // règle violée : la fouille ne compte plus
+    /* --- Défi de cette fouille ---
+       Deux champs, car ils ne vivent pas aussi longtemps : `challenge` est la
+       contrainte EN VIGUEUR, levée dès que le défi est relevé ; `runChallenge`
+       garde en mémoire le défi engagé au départ, pour le bilan de fin. */
+    challenge: null,      // id du défi en vigueur, ou null
+    runChallenge: null,   // id du défi engagé pour cette fouille
 
     /* --- Statistiques de la run --- */
-    runStart: Date.now(),
+    runTime: 0,           // durée de la fouille, en TEMPS DE JEU (voir engine.tick)
     runSediment: 0,
     runArtefacts: 0,
     runEvents: 0,
@@ -88,7 +91,6 @@ function newGame() {
     totalDepthDug: 0,
     bestDepth: 0,
     playTime: 0,
-    started: Date.now(),
 
     /* --- Journal (lore + événements). On plafonne pour ne pas gonfler la save --- */
     log: [],
@@ -99,6 +101,7 @@ function newGame() {
     seenStrata: {},       // strates dont l'intro a déjà été jouée
     buyMode: 1,           // 1 | 10 | 100 | -1 (max) : mode d'achat des outils
     autoMode: 'safe',     // 'off' | 'safe' | 'max' : politique de descente auto
+    logStory: false,      // carnet filtré : récit seul, sans la comptabilité
     tab: 'outils',
   });
 }
@@ -119,15 +122,26 @@ function saveData() {
   return rest;
 }
 
+/* Mode démo (index.html?demo=N) : la partie affichée est simulée. La
+   sauvegarder écraserait la vraie progression du joueur — ce qui arrivait à
+   la fermeture de l'onglet, via `beforeunload`. On coupe donc à la source,
+   ici, plutôt qu'à chacun des six endroits qui appellent saveGame(). */
+let saveDisabled = false;
+let saveWarned = false;   // l'alerte « stockage bloqué » n'est montrée qu'une fois
+
 function saveGame(silent = false) {
+  if (saveDisabled) { if (!silent) toast("Mode démo : rien n'est sauvegardé."); return false; }
   S.lastSave = Date.now();
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(saveData()));
     if (!silent) toast('Partie sauvegardée.');
     return true;
   } catch (e) {
-    // Cas typique : navigation privée, ou quota dépassé.
-    toast('⚠ Sauvegarde impossible (stockage local bloqué).');
+    /* Cas typique : navigation privée, ou quota dépassé. La sauvegarde auto
+       repasse toutes les 20 s : sans ce garde-fou, l'alerte reviendrait en
+       boucle pendant toute la partie. */
+    if (!silent || !saveWarned) toast('⚠ Sauvegarde impossible (stockage local bloqué).');
+    saveWarned = true;
     console.error(e);
     return false;
   }
@@ -143,31 +157,46 @@ function loadGame() {
   if (!raw) return false;
 
   try {
-    const data = JSON.parse(raw);
-    // Fusion défensive : si on ajoute un champ dans une future version,
-    // les vieilles sauvegardes n'ont pas ce champ → newGame() fournit le défaut.
-    S = Object.assign(newGame(), data);
-    // Les sous-objets doivent aussi être garantis non-nuls.
-    ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
-     'doctrineRuns','mastered','hintsSeen','challengesDone','fragmentsBought',
-     'traitsInherited'].forEach((k) => {
-      if (!S[k] || typeof S[k] !== 'object') S[k] = {};
-    });
-    if (!Array.isArray(S.log)) S.log = [];
-    if (!Array.isArray(S.buffs)) S.buffs = [];
-
-    /* --- MIGRATIONS DE SAUVEGARDE ---
-       Le Protocole de comblement est devenu définitif (v1.3). Une partie
-       sauvegardée AVANT ce changement a déjà comblé sans porter le marqueur :
-       sans cette ligne, elle devrait le racheter une dernière fois. Corriger
-       l'état au chargement est plus sûr que de compter sur le prochain passage
-       dans doPrestige(). */
-    if (S.prestiges > 0 && !S.research.combler) S.research.combler = true;
+    S = hydrate(JSON.parse(raw));
     return true;
   } catch (e) {
     console.error('Sauvegarde corrompue :', e);
     return false;
   }
+}
+
+/**
+ * Transforme des données brutes (sauvegarde locale OU code importé) en un
+ * état complet et sain. Un seul passage obligé pour les deux chemins : sinon
+ * un correctif de migration ajouté ici ne toucherait que l'un des deux.
+ */
+function hydrate(data) {
+  // Fusion défensive : si on ajoute un champ dans une future version,
+  // les vieilles sauvegardes n'ont pas ce champ → newGame() fournit le défaut.
+  const st = Object.assign(newGame(), data);
+  // Les sous-objets doivent aussi être garantis non-nuls.
+  ['tools','upgrades','research','artefacts','meta','achievements','seenStrata',
+   'doctrineRuns','mastered','hintsSeen','challengesDone','fragmentsBought',
+   'traitsInherited'].forEach((k) => {
+    if (!st[k] || typeof st[k] !== 'object') st[k] = {};
+  });
+  if (!Array.isArray(st.log)) st.log = [];
+  if (!Array.isArray(st.buffs)) st.buffs = [];
+
+  /* --- MIGRATIONS DE SAUVEGARDE ---
+     Le Protocole de comblement est devenu définitif (v1.3). Une partie
+     sauvegardée AVANT ce changement a déjà comblé sans porter le marqueur :
+     sans cette ligne, elle devrait le racheter une dernière fois. Corriger
+     l'état au chargement est plus sûr que de compter sur le prochain passage
+     dans doPrestige(). */
+  if (st.prestiges > 0 && !st.research.combler) st.research.combler = true;
+
+  /* v2.2 : champs retirés (jamais lus) et défi de la fouille en cours, qui
+     n'était pas mémorisé à part. Sans cette ligne, une partie sauvegardée en
+     plein défi afficherait un bilan sans lui. */
+  delete st.challengeFailed; delete st.started; delete st.runStart;
+  if (st.challenge && !st.runChallenge) st.runChallenge = st.challenge;
+  return st;
 }
 
 function wipeGame() {
@@ -185,7 +214,7 @@ function importSave(str) {
   try {
     const data = JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
     if (typeof data.depth !== 'number') throw new Error('format inattendu');
-    S = Object.assign(newGame(), data);
+    S = hydrate(data);
     saveGame(true);
     return true;
   } catch (e) {

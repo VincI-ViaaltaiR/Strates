@@ -7,7 +7,7 @@
 <!-- Le `?v=` change à chaque version : sans lui, un navigateur qui a déjà
      visité le jeu resservirait ses anciens fichiers depuis son cache et le
      joueur resterait bloqué sur une version périmée sans le savoir. -->
-<link rel="stylesheet" href="css/style.css?v=2.1.0">
+<link rel="stylesheet" href="css/style.css?v=2.1.1">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⛏️</text></svg>">
 </head>
 <body>
@@ -38,7 +38,7 @@
     </div>
   </div>
 
-  <button id="btn-menu" class="ghost" title="Options">☰</button>
+  <button id="btn-menu" class="ghost" title="Options" aria-label="Options">☰</button>
 </header>
 
 <!-- ======================= CORPS ======================= -->
@@ -75,7 +75,7 @@
         </div>
       </div>
 
-      <div class="hint">Espace = bêche · D = descendre · S = sauvegarder</div>
+      <div class="hint">Espace = bêche · D = descendre · A = descente auto · 1-7 = onglets · S = sauvegarder</div>
     </div>
   </aside>
 
@@ -183,7 +183,7 @@
           </div>
           <div class="unit-trait" id="unit-trait"></div>
           <p class="dc-intro">Partir abandonne la mémoire gravée, les doctrines et les
-            recherches, et vous laisse <b>30 % des éclats gagnés à vie</b>. Survivent aussi la
+            recherches, et vous laisse <b>30 % des éclats gagnés à vie</b>. Survivent aussi la Graine, la
             collection, les succès, les maîtrises et les défis relevés.<br>
             Vous gagnez des <b>fragments</b>, dont les bonus dépassent de loin ceux de la
             mémoire — et <b>30 % de la nature</b> de la graine que vous quittez, définitivement.
@@ -212,7 +212,10 @@
 
   <!-- ---------- COLONNE DROITE : JOURNAL ---------- -->
   <aside id="journal">
-    <h3>Carnet de fouille</h3>
+    <h3>Carnet de fouille
+      <button id="log-filter" class="log-filter" aria-pressed="false"
+              title="Masquer les lignes comptables (doublons, achats, succès) et ne garder que le récit.">récit seul</button>
+    </h3>
     <div id="log"></div>
   </aside>
 
@@ -220,9 +223,9 @@
 
 <!-- ======================= SURCOUCHES ======================= -->
 <div id="artefact-flash" class="hidden"></div>
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
 
-<div class="modal hidden" id="modal-options">
+<div class="modal hidden" id="modal-options" role="dialog" aria-modal="true" aria-label="Options">
   <div class="modal-box">
     <h2>Options <span id="opt-version" class="version">v—</span></h2>
     <div class="modal-row">
@@ -245,7 +248,7 @@
 </div>
 
 <!-- Bilan de fin de fouille : le seul moment où le jeu efface trois heures -->
-<div class="modal hidden" id="modal-report">
+<div class="modal hidden" id="modal-report" role="dialog" aria-modal="true" aria-labelledby="report-title">
   <div class="modal-box report-box">
     <div class="hint-lab">Fouille close</div>
     <h2 id="report-title">Bilan</h2>
@@ -255,7 +258,7 @@
 </div>
 
 <!-- Aide contextuelle, montrée une seule fois au déblocage d'une mécanique -->
-<div class="modal hidden" id="modal-hint">
+<div class="modal hidden" id="modal-hint" role="dialog" aria-modal="true" aria-labelledby="hint-title">
   <div class="modal-box hint-box">
     <div class="hint-lab">Nouveau dans votre chantier</div>
     <h2 id="hint-title">…</h2>
@@ -269,7 +272,7 @@
 
 <!-- Événement de forage : volontairement SANS bouton de fermeture.
      Le puits pose une question, on y répond. -->
-<div class="modal hidden" id="modal-event">
+<div class="modal hidden" id="modal-event" role="dialog" aria-modal="true" aria-labelledby="ev-title">
   <div class="modal-box event-box">
     <div class="ev-strata" id="ev-strata"></div>
     <h2 id="ev-title">…</h2>
@@ -278,7 +281,7 @@
   </div>
 </div>
 
-<div class="modal hidden" id="modal-confirm">
+<div class="modal hidden" id="modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
   <div class="modal-box">
     <h2 id="confirm-title">…</h2>
     <p id="confirm-body">…</p>
@@ -291,12 +294,12 @@
 
 <!-- Scripts classiques (pas de modules ES) : le jeu doit fonctionner
      en ouvrant simplement le fichier, sans serveur local. L'ordre compte. -->
-<script src="js/utils.js?v=2.1.0"></script>
-<script src="js/content.js?v=2.1.0"></script>
-<script src="js/state.js?v=2.1.0"></script>
-<script src="js/audio.js?v=2.1.0"></script>
-<script src="js/engine.js?v=2.1.0"></script>
-<script src="js/ui.js?v=2.1.0"></script>
-<script src="js/main.js?v=2.1.0"></script>
+<script src="js/utils.js?v=2.1.1"></script>
+<script src="js/content.js?v=2.1.1"></script>
+<script src="js/state.js?v=2.1.1"></script>
+<script src="js/audio.js?v=2.1.1"></script>
+<script src="js/engine.js?v=2.1.1"></script>
+<script src="js/ui.js?v=2.1.1"></script>
+<script src="js/main.js?v=2.1.1"></script>
 </body>
 </html>

@@ -23,6 +23,7 @@ const Game = {
     const demo = parseInt(new URLSearchParams(location.search).get('demo'), 10);
     if (demo > 0) {
       this.demoMode = true;
+      saveDisabled = true;           // voir state.js : protège la vraie partie
       this.runDemo(demo);
       this.bindUI();
       UI.setTab(new URLSearchParams(location.search).get('tab') || 'outils');
@@ -43,7 +44,7 @@ const Game = {
           depth: Math.floor(S.maxDepth), shards: Engine.shardsFor(S.maxDepth),
           artefacts: S.runArtefacts | 0, events: S.runEvents | 0,
           research: Object.keys(S.research).length, sediment: S.runSediment,
-          seconds: S.playTime, doctrine: S.doctrine, challenge: S.challenge,
+          seconds: S.runTime, doctrine: S.doctrine, challenge: S.runChallenge,
           challengeDone: false, strata: Engine.strataAt(S.maxDepth).name,
         };
         this.showReport(S.lastRun);
@@ -146,7 +147,7 @@ const Game = {
       this.saveTimer += s;
     }
 
-    if (this.saveTimer > 20 && !this.demoMode) { this.saveTimer = 0; saveGame(true); }
+    if (this.saveTimer > 20) { this.saveTimer = 0; saveGame(true); }
   },
 
   /* -----------------------------------------------------------------------
@@ -193,10 +194,10 @@ const Game = {
       if (!Engine.canLeaveUnit()) return;
       const gain = Engine.fragmentsFor(S.maxDepth);
       this.confirm('Quitter cette graine ?',
-        `Vous perdez <b>tout</b> : sédiment, outils, recherches, profondeur, <b>éclats et
-         mémoire gravée</b>, doctrines engagées.<br><br>
+        `Vous perdez : sédiment, outils, recherches, profondeur, <b>la mémoire gravée et
+         70 % des éclats</b>, doctrines engagées.<br><br>
          Vous conservez : la collection d'artefacts, les succès, les maîtrises de doctrine,
-         les défis relevés.<br><br>
+         les défis relevés, la Graine — et 30 % des éclats gagnés à vie.<br><br>
          Vous gagnez : <b>${gain} fragment(s) d'unité ✧</b>, et une graine neuve avec sa
          propre nature.`,
         () => {
@@ -222,12 +223,19 @@ const Game = {
 
     /* Politique de descente automatique (arrêt / prudent / à fond) */
     document.querySelectorAll('.automode').forEach((b) => {
-      b.classList.toggle('on', b.dataset.m === S.autoMode);
-      b.addEventListener('click', () => {
-        S.autoMode = b.dataset.m;
-        document.querySelectorAll('.automode').forEach((x) => x.classList.toggle('on', x === b));
-      });
+      b.addEventListener('click', () => this.setAutoMode(b.dataset.m));
     });
+    this.setAutoMode(S.autoMode);
+
+    /* Filtre du carnet : récit seul. Une classe sur le conteneur suffit — le
+       CSS masque les lignes comptables, rien n'est supprimé du journal. */
+    const lf = $('log-filter');
+    const applyLogFilter = () => {
+      $('log').classList.toggle('story', !!S.logStory);
+      lf.setAttribute('aria-pressed', S.logStory ? 'true' : 'false');
+    };
+    lf.addEventListener('click', () => { S.logStory = !S.logStory; applyLogFilter(); });
+    applyLogFilter();
 
     /* Prestige, avec confirmation : c'est une action irréversible. */
     $('btn-prestige').addEventListener('click', () => {
@@ -239,7 +247,7 @@ const Game = {
          Vous conservez : <b>la collection d'artefacts</b>, la mémoire gravée, les succès.<br>
          Vous gagnez : <b>${fmtInt(gain)} éclat(s) de mémoire</b> (+${Math.round(BAL.shardBonus * 100)} % de production chacun, définitivement).`,
         () => {
-          const g = Engine.doPrestige();
+          Engine.doPrestige();
           saveGame(true);
           UI.setTab('outils');
           this.showReport(S.lastRun);
@@ -275,8 +283,16 @@ const Game = {
       const code = exportSave();
       $('opt-io').value = code;
       $('opt-io').select();
-      try { document.execCommand('copy'); toast('Code copié dans le presse-papier.'); }
-      catch (e) { toast('Sélectionnez le texte et copiez-le.'); }
+      /* L'API moderne d'abord ; `execCommand` (obsolète) en repli, car
+         `navigator.clipboard` n'existe pas en `file://` sur tous les
+         navigateurs. Dans tous les cas le code reste affiché et sélectionné. */
+      const fallback = () => {
+        try { document.execCommand('copy'); toast('Code copié dans le presse-papier.'); }
+        catch (e) { toast('Sélectionnez le texte et copiez-le.'); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => toast('Code copié dans le presse-papier.'), fallback);
+      } else fallback();
     });
     $('opt-import').addEventListener('click', () => {
       const v = $('opt-io').value;
@@ -296,10 +312,31 @@ const Game = {
        bêche. On n'accepte donc que les vraies pressions. */
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      /* Fenêtre ouverte : les raccourcis se taisent. Sinon « D » descendait
+         derrière une question du puits, et Espace — détourné vers la bêche —
+         ne pouvait plus activer le bouton qui a le focus dans la fenêtre. */
+      if (UI.anyModalOpen()) return;
       if (e.repeat) { if (e.code === 'Space') e.preventDefault(); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;   // laisse Ctrl+S, Ctrl+1… au navigateur
+      const k = e.key.toLowerCase();
       if (e.code === 'Space') { e.preventDefault(); $('btn-dig').click(); }
-      else if (e.key === 'd' || e.key === 'D') $('btn-descend').click();
-      else if (e.key === 's' || e.key === 'S') saveGame();
+      else if (k === 'd') $('btn-descend').click();
+      else if (k === 's') saveGame();
+      else if (k === 'a' && S.calc.autoDig) {
+        /* A fait tourner la politique : arrêt → prudent → à fond → arrêt.
+           Alterner investissement et poussée est LE geste du jeu : il mérite
+           une touche plutôt qu'un aller-retour de souris. */
+        const order = ['off', 'safe', 'max'];
+        const next = order[(order.indexOf(S.autoMode) + 1) % order.length];
+        this.setAutoMode(next);
+        toast('Descente auto : ' + { off: 'arrêt', safe: 'prudent', max: 'à fond' }[next]);
+      } else if (/^(Digit|Numpad)[1-7]$/.test(e.code)) {
+        /* 1 à 7 : onglets, dans l'ordre de la barre. `e.code` désigne la
+           TOUCHE physique, `e.key` le caractère produit : sur AZERTY, la
+           rangée du haut donne « & é " … » sans Maj, et `e.key` échouerait. */
+        const tab = document.querySelectorAll('.tab')[+e.code.slice(-1) - 1];
+        if (tab) UI.setTab(tab.dataset.tab);
+      }
     });
 
     /* Sauvegarde de sécurité quand on ferme l'onglet. */
@@ -323,13 +360,13 @@ const Game = {
       const cps = t < 180 ? 4 : t < 900 ? 1 : 0;
       for (let i = 0; i < cps * dt; i++) Engine.click();
 
-      /* Le joueur simulé répond au hasard aux événements. Sans cela, le tout
-         premier resterait en attente et bloquerait tous les suivants — l'état
-         de démo ne ressemblerait plus à une vraie partie. */
       /* Le joueur simulé « lit » les aides au fil de l'eau, sans quoi la
          première bloquerait la file et l'onglet Aide resterait vide. */
       UI.showHint = null;
 
+      /* Il répond aussi au hasard aux événements. Sans cela, le tout premier
+         resterait en attente et bloquerait tous les suivants — l'état de démo
+         ne ressemblerait plus à une vraie partie. */
       if (S.pendingEvent && t < seconds - 60) {
         const ev = BY_ID.event[S.pendingEvent];
         Engine.resolveEvent(S.pendingEvent, Math.floor(Math.random() * ev.choices.length));
@@ -340,6 +377,14 @@ const Game = {
         for (const u of UPGRADES.concat(GLOBAL_UPGRADES)) {
           const visible = u.tool ? (S.tools[u.tool] || 0) >= u.need : S.bestDepth >= u.needDepth;
           if (visible && !S.upgrades[u.id] && S.sediment > u.cost * 1.6) Engine.buyUpgrade(u.id);
+        }
+        /* Poussée : même règle que le banc d'essai (voir tools/sim.html). */
+        const PUSH_SEC = 120;
+        const push = Engine.digCost(S.depth) < S.calc.sedPerSec * PUSH_SEC;
+        if (S.calc.autoDig) S.autoMode = push ? 'max' : 'safe';
+        else if (push) {
+          let g = 500;
+          while (g-- > 0 && Engine.digCost(S.depth) < S.calc.sedPerSec * PUSH_SEC && Engine.descend(true)) {}
         }
         let guard = 40;
         while (guard-- > 0) {
@@ -384,6 +429,12 @@ well-ctl height .. ${$('well-ctl').offsetHeight}
 log entries ...... ${S.log.length}</pre>`);
     d.style.cssText = 'position:fixed;right:8px;top:80px;z-index:999;background:#000;border:1px solid #e0a33e;padding:10px';
     document.body.appendChild(d);
+  },
+
+  /** Change la politique de descente auto et allume le bon bouton. */
+  setAutoMode(m) {
+    S.autoMode = m;
+    document.querySelectorAll('.automode').forEach((x) => x.classList.toggle('on', x.dataset.m === m));
   },
 
   /* Petite boîte de confirmation maison (window.confirm est laid et bloquant). */

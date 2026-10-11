@@ -393,6 +393,16 @@ main > * { min-height: 0; }
   letter-spacing: 2px; text-transform: uppercase; color: var(--txt-dim);
   border-bottom: 1px solid var(--line);
 }
+#journal h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Filtre « récit seul » : masque la comptabilité (doublons, achats, succès)
+   pour ne laisser que ce que le puits raconte. */
+.log-filter {
+  font: 10px var(--mono); letter-spacing: 1px; text-transform: none;
+  padding: 2px 8px; border: 1px solid var(--line); border-radius: 10px;
+  background: transparent; color: var(--txt-dim); cursor: pointer;
+}
+.log-filter[aria-pressed="true"] { color: var(--amber); border-color: var(--amber); }
+#log.story .le-dup, #log.story .le-up, #log.story .le-res, #log.story .le-ach { display: none; }
 #log { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px 30px; }
 .le {
   padding: 7px 0 7px 9px; border-left: 2px solid #332c25;

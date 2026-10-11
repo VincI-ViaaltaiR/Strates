@@ -78,6 +78,7 @@ UI.buildWell = function () {
     const span = (next ? next.depth : s.depth + 90) - s.depth;
 
     const seg = el('div', 'strat' + (unknown ? ' unknown' : '') + (s === cur ? ' active' : ''));
+    seg._end = s.depth + span;             // profondeur de fin, pour placer le curseur
     seg.style.setProperty('--c', s.color);
     seg.style.flexGrow = Math.max(1, Math.sqrt(span));   // racine : compresse les strates larges
     seg.innerHTML = unknown
@@ -92,7 +93,19 @@ UI.buildWell = function () {
   cursor.innerHTML = '<span></span>';
   col.appendChild(cursor);
   UI.refs.cursor = cursor;
+  UI.refs.segs = [...col.querySelectorAll('.strat')];
+  UI._cursorKey = null;                    // la colonne a changé : replacer le curseur
 };
+
+/* La hauteur des segments change sans que la profondeur bouge : fenêtre
+   redimensionnée, mais aussi bandeau d'effets qui apparaît sous la colonne et
+   la raccourcit. Un ResizeObserver les couvre tous : le curseur est replacé
+   dès que la colonne change de taille, quelle qu'en soit la cause. */
+if (typeof ResizeObserver !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    new ResizeObserver(() => { UI._cursorKey = null; }).observe($('well-col'));
+  });
+}
 
 UI.refreshWell = function () {
   const cost = Engine.digCost(S.depth);
@@ -123,16 +136,19 @@ UI.refreshWell = function () {
   $('auto-ctl').classList.toggle('hidden', !S.calc.autoDig);
 
   /* Position du curseur dans la colonne (proportionnelle à la profondeur
-     affichée, bornée par la dernière strate connue). */
-  if (UI.refs.cursor) {
-    const col = $('well-col');
-    const segs = [...col.querySelectorAll('.strat')];
+     affichée, bornée par la dernière strate connue).
+     On ne la recalcule que si la profondeur a changé : lire `offsetTop` juste
+     après avoir modifié des textes force le navigateur à recalculer toute la
+     mise en page, et le faire à chaque image pour un curseur immobile était
+     le poste le plus coûteux du rendu. */
+  const segs = UI.refs.segs;
+  if (UI.refs.cursor && segs && UI._cursorKey !== S.depth) {
+    UI._cursorKey = S.depth;
     let top = 0;
     for (let i = 0; i < segs.length; i++) {
-      const s = STRATA[i], next = STRATA[i + 1];
-      const end = next ? next.depth : s.depth + 90;
+      const start = STRATA[i].depth, end = segs[i]._end;
       if (S.depth < end || i === segs.length - 1) {
-        const f = clamp((S.depth - s.depth) / (end - s.depth), 0, 1);
+        const f = clamp((S.depth - start) / (end - start), 0, 1);
         top = segs[i].offsetTop + segs[i].offsetHeight * f;
         break;
       }
@@ -370,10 +386,10 @@ UI.buildMeta = function () {
   UI.refs.meta = {};
 
   META.forEach((m) => {
+    /* Contrairement aux recherches, l'arbre de la Mémoire se montre EN ENTIER :
+       il est court, et c'est en voyant où il mène qu'on décide de combler. */
     const done = !!S.meta[m.id];
     const open = Engine.metaAvailable(m);
-    const oneAway = m.req.length && m.req.filter((q) => !S.meta[q]).length >= 1;
-    if (!done && !open && !oneAway) return;
 
     const card = el('div', 'card meta' + (done ? ' done' : '') + (!open && !done ? ' locked' : ''));
     card.innerHTML = `
@@ -414,20 +430,19 @@ UI.refreshMeta = function () {
 
   /* Profondeur nécessaire pour gagner un éclat de plus : information clé
      pour décider « je pousse encore un peu » ou « je comble maintenant ». */
-  const nextAt = Math.ceil(BAL.shardDiv * Math.pow(gain + 1, 1 / BAL.shardPow));
-  $('meta-next').textContent = `+1 éclat à ${fmtInt(nextAt)} m`;
+  $('meta-next').textContent = `+1 éclat à ${fmtInt(Engine.depthForShards(gain + 1))} m`;
 
   /* Le gain traduit en production, avant / après. « +13 éclats » ne veut rien
      dire tant qu'on n'a pas compris que chaque éclat vaut +10 % à vie. */
   const now = 1 + BAL.shardBonus * S.shardsTotal;
   const after = 1 + BAL.shardBonus * (S.shardsTotal + gain);
-  $('meta-pitch').innerHTML = gain < 1
+  setHTML($('meta-pitch'), gain < 1
     ? `Descendez à <b>${BAL.shardDiv} m</b> au moins pour que le comblement rapporte un éclat.`
     : `Chaque éclat augmente votre production de <b>${Math.round(BAL.shardBonus * 100)} %</b>,
        <b>définitivement et dès qu'il est gagné</b> — sans rien acheter dans l'arbre ci-dessous.<br>
        Combler maintenant : bonus permanent <b>×${fmt(now, 2)} → ×${fmt(after, 2)}</b>
        <span class="pb-gain">(+${Math.round((after / now - 1) * 100)} % de production pour
-       toutes vos fouilles suivantes)</span>`;
+       toutes vos fouilles suivantes)</span>`);
 
   const btn = $('btn-prestige');
   btn.disabled = gain < 1;
@@ -493,7 +508,7 @@ UI.refreshDoctrineBadge = function () {
   if (!d || d.id === 'aucune') { badge.classList.add('hidden'); return; }
   badge.classList.remove('hidden');
   badge.style.setProperty('--c', d.color);
-  badge.innerHTML = `<span class="db-lab">doctrine</span><span class="db-name">${d.name}</span>`;
+  setHTML(badge, `<span class="db-lab">doctrine</span><span class="db-name">${d.name}</span>`);
 };
 
 /* ---- 3e quater. DÉFIS & UNITÉS ------------------------------------------ */
@@ -530,10 +545,10 @@ UI.buildUnits = function () {
   const box = $('fragment-list');
   if (!box) return;
   box.innerHTML = '';
+  /* Arbre montré en entier, comme celui de la Mémoire. */
   FRAGMENTS.forEach((f) => {
     const done = !!S.fragmentsBought[f.id];
     const open = Engine.fragmentAvailable(f);
-    if (!done && !open && !f.req.every((q) => S.fragmentsBought[q] || BY_ID.fragment[q])) return;
     const card = el('div', 'card frag' + (done ? ' done' : '') + (!open && !done ? ' locked' : ''));
     card.innerHTML = `
       <div class="card-main">
@@ -553,7 +568,10 @@ UI.refreshUnits = function () {
   const box = $('units-box');
   if (!box) return;
   const can = Engine.canLeaveUnit();
-  const known = can || S.unitsLeft > 0;
+  /* Visible dès le Cœur touché une fois : après un comblement, maxDepth
+     repart de zéro et le panneau disparaissait, alors que le joueur connaît
+     désormais cette couche. */
+  const known = !!S.heartReached || S.unitsLeft > 0;
   box.classList.toggle('hidden', !known);
   if (!known) return;
 
@@ -567,22 +585,26 @@ UI.refreshUnits = function () {
   const inh = Object.entries(S.traitsInherited || {})
     .filter(([, n]) => n > 0)
     .map(([id, n]) => `${BY_ID.trait[id].name}${n > 1 ? ' ×' + n : ''}`);
-  $('unit-trait').innerHTML =
+  setHTML($('unit-trait'),
     (tr ? `<b>${tr.name}</b> — ${tr.desc}` : `<i>Unité d'origine : aucune nature particulière.</i>`)
     + (inh.length
         ? `<div class="unit-inherit"><b>Héritage</b> (${Math.round(UNIT_INHERIT * 100)} % de chaque
              nature traversée, définitivement) : ${inh.join(' · ')}</div>`
         : `<div class="unit-inherit">Chaque graine quittée vous lègue
-             <b>${Math.round(UNIT_INHERIT * 100)} % de sa nature</b>, définitivement et cumulativement.</div>`);
+             <b>${Math.round(UNIT_INHERIT * 100)} % de sa nature</b>, définitivement et cumulativement.</div>`));
   const btn = $('btn-leave');
   btn.disabled = !can;
-  btn.textContent = can ? `Partir vers une autre unité — +${gain} ✧` : `Touchez le Cœur (${HEART_DEPTH} m) pour pouvoir partir`;
+  btn.textContent = can ? `Partir vers une autre unité — +${gain} ✧`
+                        : `Atteignez ${HEART_DEPTH} m dans cette fouille pour pouvoir partir`;
 };
 
 /* ---- 3e ter. AIDE -------------------------------------------------------- */
+/** Texte d'une aide : chaîne fixe, ou fonction de l'état (voir HINTS). */
+UI.hintText = (h) => (typeof h.text === 'function' ? h.text(S) : h.text);
+
 UI.showHintModal = function (h) {
   $('hint-title').textContent = h.title;
-  $('hint-text').innerHTML = h.text;
+  $('hint-text').innerHTML = UI.hintText(h);
   /* L'aboutissement du Cœur mérite un traitement distinct : ce n'est pas une
      explication de mécanique, c'est le paiement de tout le récit. */
   const box = $('modal-hint').querySelector('.hint-box');
@@ -599,7 +621,7 @@ UI.buildHelp = function () {
   const seen = HINTS.filter((h) => S.hintsSeen[h.id]);
   box.innerHTML = seen.length
     ? seen.map((h) => `<div class="help-item">
-         <h4>${h.title}</h4><div class="help-text">${h.text}</div></div>`).join('')
+         <h4>${h.title}</h4><div class="help-text">${UI.hintText(h)}</div></div>`).join('')
     : `<p class="empty">Rien à expliquer pour l'instant : vous n'avez pas encore
          débloqué de mécanique. Creusez, ça viendra.</p>`;
 };
@@ -633,8 +655,8 @@ UI.refreshStats = function () {
     ['Comblements', fmtInt(S.prestiges)],
     ['Temps de jeu', fmtTime(S.playTime)],
   ];
-  $('stat-table').innerHTML = rows.map(([k, v]) =>
-    k === '—' ? '<tr class="sep"><td colspan="2"></td></tr>' : `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  setHTML($('stat-table'), rows.map(([k, v]) =>
+    k === '—' ? '<tr class="sep"><td colspan="2"></td></tr>' : `<tr><td>${k}</td><td>${v}</td></tr>`).join(''));
 };
 
 /* =========================================================================
@@ -746,9 +768,9 @@ UI.showEventModal = function (ev) {
 UI.refreshBuffs = function () {
   const box = $('buffs');
   const live = (S.buffs || []).filter((b) => b.until > S.playTime);
-  if (!live.length) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+  if (!live.length) { setHTML(box, ''); box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
-  box.innerHTML = live.map((b) => {
+  setHTML(box, live.map((b) => {
     const bad = (b.prodMult && b.prodMult < 1) || (b.digCostMult && b.digCostMult > 1);
     /* Un effet différé s'affiche en attente, avec le temps avant son début :
        sinon le joueur voit deux lignes et croit qu'elles agissent ensemble. */
@@ -759,7 +781,7 @@ UI.refreshBuffs = function () {
           ? 'dans ' + fmtTime(b.from - S.playTime)
           : fmtTime(b.until - S.playTime)}</span>
       </div>`;
-  }).join('');
+  }).join(''));
 };
 
 /* Nombre flottant au clic sur la bêche : le retour visuel qui rend le clic

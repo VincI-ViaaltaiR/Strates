@@ -23,7 +23,7 @@
    version ? ». À incrémenter en même temps que le `?v=` des balises
    <script>/<link> de index.html, qui force le navigateur à recharger les
    fichiers au lieu de resservir ceux qu'il a en cache. */
-const VERSION = '2.1.0';
+const VERSION = '2.1.1';
 
 /* -------------------------------------------------------------------------
    CONSTANTES D'ÉQUILIBRAGE
@@ -493,7 +493,7 @@ const CHALLENGES = [
     id: 'c_aveugle', name: 'Fouille aveugle', depth: 150,
     flavor: "Consigne écrite, sans signature : ne rien remonter, ne rien consigner, ne rien " +
             "montrer. Quelqu'un ne veut pas savoir ce qu'il y a là-dessous.",
-    rule: "Aucun artefact n'est trouvé, donc aucun savoir : pas une seule recherche de la fouille.",
+    rule: "Aucun artefact n'est trouvé et aucun savoir n'est gagné — ni en creusant, ni par les événements.",
     reward: "Coût de descente ×0,85, définitivement.", fx: { digCostMult: 0.85 },
   },
   {
@@ -519,10 +519,11 @@ const CHALLENGES = [
    sont les huit autres ». Une fois le Cœur touché, on peut PARTIR — abandonner
    cette graine pour une autre.
 
-   C'est le reset le plus dur du jeu : éclats, mémoire gravée, doctrines
-   engagées, tout disparaît. Ne survivent que la collection d'artefacts, les
-   succès, les maîtrises, les défis validés — et les FRAGMENTS D'UNITÉ, la
-   monnaie de cette couche, dont les bonus dépassent de loin ceux de la mémoire.
+   C'est le reset le plus dur du jeu : mémoire gravée, doctrines engagées et
+   recherches disparaissent, et seuls 30 % des éclats gagnés à vie restent.
+   Survivent la collection d'artefacts, les succès, les maîtrises, les défis
+   validés — et les FRAGMENTS D'UNITÉ, la monnaie de cette couche, dont les
+   bonus dépassent de loin ceux de la mémoire.
 
    Chaque unité tire un TRAIT qui change la forme de la planète : on ne rejoue
    jamais tout à fait la même partie.
@@ -855,6 +856,10 @@ const ACHIEVEMENTS = [
    Règle : aucune aide ne parle d'une mécanique non débloquée — le sujet du jeu
    reste de ne pas savoir ce qu'il y a en dessous. On explique ce qui vient
    d'apparaître, une seule fois, et l'onglet Aide le garde consultable ensuite.
+
+   `text` est en principe une chaîne. Il peut être une fonction `(S) => chaîne`
+   quand l'aide cite une valeur qui évolue en cours de partie : un chiffre figé
+   dans le texte finirait par mentir (cf. `h_offline` et l'Écho temporel).
    ------------------------------------------------------------------------- */
 const HINTS = [
   {
@@ -951,9 +956,10 @@ const HINTS = [
   },
   {
     id: 'h_offline', title: 'Le chantier tourne sans vous',
-    when: (S) => !!S.research.equipes_nuit,
-    text: `Le chantier continue de produire <b>fenêtre fermée</b>, à 50 % du rendement et
-      jusqu'à 8 heures. Vous retrouverez à votre retour ce qui a été produit.<br><br>
+    when: (S) => !!S.research.equipes_nuit || !!S.meta.echo_temporel,
+    text: (S) => `Le chantier continue de produire <b>fenêtre fermée</b>, à
+      ${Math.round(S.calc.offlineRate * 100)} % du rendement et jusqu'à ${S.calc.offlineCapH} heures.
+      Vous retrouverez à votre retour ce qui a été produit.<br><br>
       Onglet en arrière-plan, en revanche, la partie tourne <b>normalement et à 100 %</b> :
       vous pouvez laisser Strates dans un onglet et vaquer à autre chose.`,
   },

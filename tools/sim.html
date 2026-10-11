@@ -40,6 +40,9 @@ const say = (s) => L.push(s);
 
 let eventsResolved = 0;
 
+/** Le bot pousse quand le mètre suivant vaut moins que ce temps de production (s). */
+const PUSH_SEC = 120;
+
 function autoplay(seconds, marks) {
   const dt = 0.5;
   const hit = {};
@@ -70,6 +73,19 @@ function autoplay(seconds, marks) {
       for (const u of UPGRADES.concat(GLOBAL_UPGRADES)) {
         const visible = u.tool ? (S.tools[u.tool] || 0) >= u.need : S.bestDepth >= u.needDepth;
         if (visible && !S.upgrades[u.id] && S.sediment > u.cost * 1.6) Engine.buyUpgrade(u.id);
+      }
+
+      /* POUSSÉE : si le prochain mètre coûte moins de PUSH_SEC secondes de
+         production, on descend AVANT d'acheter. Sans cette règle, le joueur
+         simulé dépensait tout en outils, n'atteignait jamais la réserve 20×
+         de la descente « prudente », et restait bloqué au mur des 230 m :
+         toutes les mesures d'équilibrage en étaient faussées. Un vrai joueur
+         alterne investissement et poussée ; le bot fait désormais de même. */
+      const push = Engine.digCost(S.depth) < S.calc.sedPerSec * PUSH_SEC;
+      if (S.calc.autoDig) S.autoMode = push ? 'max' : 'safe';
+      else if (push) {
+        let g = 500;
+        while (g-- > 0 && Engine.digCost(S.depth) < S.calc.sedPerSec * PUSH_SEC && Engine.descend(true)) {}
       }
 
       /* Outils : on achète en boucle le meilleur ratio (σ/s gagné)/(coût)
@@ -290,6 +306,31 @@ try {
     ['prestige atteignable partout', runs.every(r => r.prestige)],
     ['achat groupé cohérent', (() => { S.buyMode = 10; const a = Engine.toolCostBulk('pelle', 10); const b = Engine.toolCost('pelle', 0) + Engine.toolCost('pelle', 1); return a > b; })()],
     ['export/import',         (() => { const c = exportSave(); return typeof c === 'string' && c.length > 20; })()],
+    /* depthForShards doit être l'inverse EXACT de shardsFor, y compris avec
+       un multiplicateur d'éclats (ici Ingénierie) : c'est lui qui annonce
+       « +1 éclat à X m » dans le panneau Mémoire. */
+    ['éclats : profondeur annoncée exacte', (() => {
+      const saved = S.doctrine; S.doctrine = 'ingenierie'; Engine.computeStats();
+      let ok = true;
+      for (let n = 1; n <= 80; n++) {
+        const d = Engine.depthForShards(n);
+        if (Engine.shardsFor(d) < n || (d > BAL.shardDiv && Engine.shardsFor(d - 1) >= n)) ok = false;
+      }
+      S.doctrine = saved; Engine.computeStats();
+      return ok;
+    })()],
+    /* Un effet temporaire actif à la fermeture ne doit pas peser sur toute
+       l'absence : le temps de jeu avance pendant la simulation hors-ligne. */
+    ['hors-ligne : les effets expirent', (() => {
+      S.meta.echo_temporel = true;
+      const t0 = S.playTime;
+      S.buffs = [{ name: 'test', from: t0, until: t0 + 60, prodMult: 0.01 }];
+      Engine.applyOffline(3600 * 1000);
+      const after = S.calc.prodMult;               // buff expiré : ne doit plus compter
+      S.buffs = []; Engine.computeStats();
+      delete S.meta.echo_temporel;
+      return Math.abs(S.playTime - t0 - 3600) < 1 && Math.abs(after / S.calc.prodMult - 1) < 1e-9;
+    })()],
   ];
   let bad = 0;
   for (const [name, ok] of checks) { if (!ok) bad++; say(`   ${ok ? '[OK]' : '[KO]'} ${name}`); }

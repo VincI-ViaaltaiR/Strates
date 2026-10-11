@@ -2,9 +2,9 @@
    engine.js — Le moteur. Toute la logique du jeu, zéro DOM.
 
    POURQUOI séparer strictement moteur et affichage ?
-   1) On peut tester le moteur sans navigateur (voir tools/sim.js).
-   2) On peut faire tourner 8 heures de jeu hors-ligne en 3 ms, parce qu'on
-      n'a rien à redessiner.
+   1) On peut tester le moteur sans interface (voir tools/sim.html).
+   2) On peut rejouer 8 heures de jeu hors-ligne en une fraction de seconde,
+      parce qu'on n'a rien à redessiner.
    3) Quand un chiffre est faux, on sait dans quel fichier chercher.
    ========================================================================= */
 
@@ -97,7 +97,8 @@ const Engine = {
 
   /* -----------------------------------------------------------------------
      computeStats() — recalcule TOUS les multiplicateurs.
-     Appelée une fois par tick. Coût : ~120 itérations, totalement négligeable.
+     Appelée à chaque tick et après chaque achat. Coût : ~150 itérations,
+     totalement négligeable.
      Le résultat est stocké dans S.calc pour que l'UI et le moteur lisent
      la même chose au même instant.
      ----------------------------------------------------------------------- */
@@ -192,7 +193,9 @@ const Engine = {
     const ch = S.challenge && BY_ID.challenge[S.challenge];
     if (ch) {
       if (ch.id === 'c_manuel')  c.autoDig = false;   // coupé, quoi qu'on ait cherché
-      if (ch.id === 'c_aveugle') c.artefactChance = 0;
+      /* `noArtefacts` et pas seulement une chance nulle : les événements
+         accordent aussi des artefacts et du savoir, par une autre porte. */
+      if (ch.id === 'c_aveugle') { c.artefactChance = 0; c.noArtefacts = true; }
       if (ch.id === 'c_silence') c.noEvents = true;
       if (ch.id === 'c_pauvre')  c.toolLimit = TOOLS.length - 4;
     }
@@ -498,10 +501,9 @@ const Engine = {
       out.push(`${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))} σ ` +
                `<em>(${Math.round(Math.abs(fx.sedimentFrac) * 100)} % de la réserve)</em>`);
     }
-    if (fx.knowledgeMul) {
-      out.push(`+${fmt(st.knowledge * fx.knowledgeMul * c.knowledgeMult)} ✦`);
-    }
-    if (fx.artefact) out.push(`1 artefact de <em>${st.name}</em>`);
+    if (fx.knowledgeMul) out.push(`+${fmt(this.eventKnowledge(st, fx.knowledgeMul))} ✦`);
+    if (fx.artefact) out.push(c.noArtefacts ? '<s>artefact</s> <em>(fouille aveugle)</em>'
+                                            : `1 artefact de <em>${st.name}</em>`);
     if (fx.depth)    out.push(`${fx.depth > 0 ? '+' : '−'}${Math.abs(fx.depth)} m de profondeur`);
 
     for (const b of buffList(fx)) {
@@ -515,11 +517,11 @@ const Engine = {
       }
       if (b.digCostMult) {
         const now = this.digCost(S.depth);
-        out.push(`prochain mètre ${fmt(now)} → <b>${fmt(now * b.digCostMult)} σ</b> ` +
+        out.push(after + `prochain mètre ${fmt(now)} → <b>${fmt(now * b.digCostMult)} σ</b> ` +
                  `<em>pendant ${fmtTime(b.dur)}</em>`);
       }
       if (b.artefactChanceMult) {
-        out.push(`chance d'artefact ×${fmt(b.artefactChanceMult, 2)} pendant ${fmtTime(b.dur)}`);
+        out.push(after + `chance d'artefact ×${fmt(b.artefactChanceMult, 2)} pendant ${fmtTime(b.dur)}`);
       }
     }
 
@@ -566,9 +568,9 @@ const Engine = {
     if (fx.sedimentSec)  addSediment(S.calc.sedPerSec * fx.sedimentSec);
 
     if (fx.knowledgeMul) {
-      const g = st.knowledge * fx.knowledgeMul * S.calc.knowledgeMult;
+      const g = this.eventKnowledge(st, fx.knowledgeMul);
       S.knowledge += g;
-      out.push('+' + fmt(g) + ' ✦');
+      if (g > 0) out.push('+' + fmt(g) + ' ✦');
     }
 
     if (fx.artefact) {
@@ -603,6 +605,7 @@ const Engine = {
   },
 
   findArtefact(strata, quiet) {
+    if (S.calc.noArtefacts) return;             // défi « Fouille aveugle »
     const pool = ARTEFACTS_BY_STRATA[strata.id];
     if (!pool || !pool.length) return;
     const a = pick(pool);
@@ -641,7 +644,8 @@ const Engine = {
   },
 
   /* -----------------------------------------------------------------------
-     LE TICK — appelé ~60 fois par seconde avec dt en secondes.
+     LE TICK — appelé par main.js (5 fois par seconde, par pas d'au plus
+     1 s) avec dt en secondes de jeu.
      ----------------------------------------------------------------------- */
   tick(dt) {
     /* Purge des effets temporaires expirés, avant tout calcul. */
@@ -656,6 +660,7 @@ const Engine = {
     S.totalSediment += gain;
     S.runSediment += gain;
     S.playTime += dt;
+    S.runTime += dt;
 
     /* Descente automatique. On borne le nombre de mètres par tick :
        sans cette borne, un joueur revenant avec 1e30 σ figerait l'onglet. */
@@ -707,15 +712,24 @@ const Engine = {
     const capped = Math.min(ms / 1000, S.calc.offlineCapH * 3600);
     if (capped < 30) return null;                     // moins de 30 s : on ignore
 
-    const eff = capped * S.calc.offlineRate;
+    const rate = S.calc.offlineRate;
+    const eff = capped * rate;
     const before = S.depth;
 
     /* On simule par pas de 10 s : assez fin pour que la descente auto suive
-       la montée du coût, assez grossier pour rester instantané. */
+       la montée du coût, assez grossier pour rester instantané.
+
+       Le temps de jeu avance PENDANT la simulation, pas seulement à la fin.
+       Sinon un effet temporaire actif à la fermeture (« Chantier ralenti »,
+       2 min 40) pesait sur les 8 heures d'absence entières — et un ×3 de
+       production, pareil, dans l'autre sens. `d` est du temps de production
+       (réduit par le rendement) ; l'horloge, elle, avance de d ÷ rendement. */
     const step = 10;
     let t = 0, meters = 0;
     while (t < eff) {
       const d = Math.min(step, eff - t);
+      S.playTime += d / rate;
+      S.runTime += d / rate;
       const g = S.calc.sedPerSec * d;
       S.sediment += g;
       S.totalSediment += g;
@@ -728,19 +742,36 @@ const Engine = {
       t += d;
       this.computeStats();
     }
-    S.playTime += capped;
     return { seconds: capped, rate: S.calc.offlineRate, meters, depthFrom: before };
   },
 
   /* -----------------------------------------------------------------------
      PRESTIGE — « combler le puits ».
      ----------------------------------------------------------------------- */
+  /** Multiplicateur total des éclats (doctrine, défi, Graine, fragments, Mémoire vive). */
+  shardMult() {
+    return (S.meta.memoire_vive ? 1.5 : 1) * ((S.calc && S.calc.shardMult) || 1);
+  },
+
   shardsFor(depth) {
     if (depth < BAL.shardDiv) return 0;
-    let n = Math.pow(depth / BAL.shardDiv, BAL.shardPow);
-    if (S.meta.memoire_vive) n *= 1.5;
-    n *= (S.calc && S.calc.shardMult) || 1;   // doctrine Ingénierie
-    return Math.floor(n);
+    return Math.floor(Math.pow(depth / BAL.shardDiv, BAL.shardPow) * this.shardMult());
+  },
+
+  /**
+   * Profondeur à partir de laquelle le comblement rapporte `n` éclats.
+   * C'est l'inverse exact de shardsFor : on cherche le plus petit d tel que
+   *     (d / shardDiv)^shardPow × mult ≥ n
+   * soit d ≥ shardDiv × (n / mult)^(1 / shardPow).
+   * L'ancienne version oubliait `mult` : sous Ingénierie (×1,7), elle annonçait
+   * une profondeur bien trop lointaine pour l'éclat suivant.
+   */
+  depthForShards(n) {
+    let d = Math.max(BAL.shardDiv, Math.ceil(BAL.shardDiv * Math.pow(n / this.shardMult(), 1 / BAL.shardPow)));
+    /* Filet contre l'arrondi des flottants : 89,9999… arrondi à 90 peut
+       encore donner n − 1 une fois repassé dans shardsFor(). */
+    while (this.shardsFor(d) < n) d++;
+    return d;
   },
 
   doPrestige() {
@@ -757,10 +788,12 @@ const Engine = {
       events: S.runEvents | 0,
       research: Object.keys(S.research).length,
       sediment: S.runSediment,
-      seconds: (Date.now() - S.runStart) / 1000,
+      seconds: S.runTime,
       doctrine: S.doctrine,
-      challenge: S.challenge,
-      challengeDone: !!(S.challenge && S.challengesDone[S.challenge]),
+      /* `runChallenge` et non `challenge` : ce dernier est remis à null dès
+         que le défi est relevé, et le bilan affichait alors « aucun défi ». */
+      challenge: S.runChallenge,
+      challengeDone: !!(S.runChallenge && S.challengesDone[S.runChallenge]),
       strata: this.strataAt(S.maxDepth).name,
     };
 
@@ -802,11 +835,11 @@ const Engine = {
     S.seenStrata = {};          // on veut relire les textes de strate
     S.doctrine = engaged;
     S.nextDoctrine = engaged;   // reconduite par défaut, modifiable à tout moment
-    this.computeStats();
 
-    /* Le défi armé prend effet maintenant, pour la fouille qui commence. */
-    S.challenge = S.nextChallenge || null;
-    S.challengeFailed = false;
+    /* Le défi armé prend effet maintenant, pour la fouille qui commence.
+       AVANT computeStats() : sa contrainte doit valoir dès le premier calcul. */
+    S.challenge = S.runChallenge = S.nextChallenge || null;
+    this.computeStats();
 
     Sfx.play('prestige');
     const dn = BY_ID.doctrine[engaged];
@@ -847,14 +880,24 @@ const Engine = {
     if (fx.artefactChanceMult) addChance(soften(fx.artefactChanceMult));
   },
 
+  /** Savoir rapporté par un événement (`knowledgeMul`), nul pendant la « Fouille aveugle ». */
+  eventKnowledge(st, mul) {
+    return S.calc.noArtefacts ? 0 : st.knowledge * mul * S.calc.knowledgeMult;
+  },
+
+  /* On part d'une graine en atteignant son Cœur DANS LA FOUILLE EN COURS
+     (maxDepth repart de zéro à chaque comblement et à chaque départ). Le
+     bonus de la Graine, lui, est acquis une fois pour toutes : il ne sert pas
+     de condition de départ. */
   canLeaveUnit() {
-    return !!S.heartReached && S.maxDepth >= HEART_DEPTH;
+    return S.maxDepth >= HEART_DEPTH;
   },
 
   /**
-   * Quitter cette graine pour une autre. Le reset le plus dur du jeu : éclats,
-   * mémoire gravée et doctrines disparaissent. Ne survivent que ce qui relève
-   * de la CONNAISSANCE (collection, succès, maîtrises, défis) et les fragments.
+   * Quitter cette graine pour une autre. Le reset le plus dur du jeu : mémoire
+   * gravée, doctrines et recherches disparaissent, 30 % des éclats restent.
+   * Survivent ce qui relève de la CONNAISSANCE (collection, succès, maîtrises,
+   * défis), la Graine et les fragments.
    */
   leaveUnit() {
     if (!this.canLeaveUnit()) return false;
@@ -888,7 +931,8 @@ const Engine = {
     S.doctrine = 'aucune';
     S.nextDoctrine = 'aucune';
     S.seenStrata = {};
-    S.heartReached = false;      // il faudra retoucher le Cœur de CETTE unité
+    /* `heartReached` n'est PAS remis à zéro : la Graine est promise
+       « définitivement, pour toutes vos fouilles », et c'est le cas. */
     S.research = {};             // y compris le Protocole : nouvelle planète, nouveau chantier
 
     this.computeStats();
